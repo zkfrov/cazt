@@ -11,13 +11,13 @@
 ### Quick Install (One-liner)
 
 ```bash
-curl -L https://raw.githubusercontent.com/zkfrov/cazt/main/cazt-node/install.sh | bash
+curl -L https://raw.githubusercontent.com/zkfrov/cazt/main/install.sh | bash
 ```
 
 Or using the install script directly:
 
 ```bash
-bash <(curl -L https://raw.githubusercontent.com/zkfrov/cazt/main/cazt-node/install.sh)
+bash <(curl -L https://raw.githubusercontent.com/zkfrov/cazt/main/install.sh)
 ```
 
 This will:
@@ -36,7 +36,7 @@ This will:
 
 ```bash
 git clone https://github.com/zkfrov/cazt.git
-cd cazt/cazt-node
+cd cazt
 yarn install
 yarn build
 ```

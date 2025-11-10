@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install script for cazt
 # Can be run locally or downloaded and run remotely
-# Usage: curl -L https://raw.githubusercontent.com/zkfrov/cazt/main/cazt-node/install.sh | bash
+# Usage: curl -L https://raw.githubusercontent.com/zkfrov/cazt/main/install.sh | bash
 
 set -euo pipefail
 
@@ -53,7 +53,7 @@ else
     echo -e "${RED}Failed to clone repository${NC}"
     exit 1
   }
-  SRC_DIR="$TEMP_DIR/cazt/cazt-node"
+  SRC_DIR="$TEMP_DIR/cazt"
 fi
 
 # Check package manager
