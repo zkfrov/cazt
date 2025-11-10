@@ -1,0 +1,41 @@
+{
+  "name": "cazt",
+  "version": "3.0.0-devnet.2",
+  "description": "cast-like CLI for Aztec",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "cazt": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zkfrov/cazt.git"
+  },
+  "author": "Wonderland",
+  "license": "MIT",
+  "dependencies": {
+    "@aztec/aztec.js": "3.0.0-devnet.2",
+    "@aztec/stdlib": "3.0.0-devnet.2",
+    "@aztec/foundation": "3.0.0-devnet.2",
+    "commander": "^12.1.0",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+}
+
