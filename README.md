@@ -13,15 +13,7 @@
 - **Node.js** 20+ and npm/yarn
 - (Optional) Access to an Aztec Node for RPC commands
 
-### Method 1: Install Script (Recommended)
-
-```bash
-curl -L https://raw.githubusercontent.com/zkfrov/cazt/main/install.sh | bash
-```
-
-This installs `cazt` to `~/.cazt/bin` and adds it to your PATH.
-
-### Method 2: From Source
+### Method 1: From Source
 
 ```bash
 # Clone and build
@@ -34,16 +26,7 @@ yarn build
 yarn install-global
 ```
 
-After installation, restart your terminal or run:
-```bash
-# For zsh (macOS default)
-source ~/.zshrc
-
-# For bash
-source ~/.bashrc
-```
-
-### Method 3: Development Setup
+### Method 2: Development Setup
 
 For local development without global installation:
 
