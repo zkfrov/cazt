@@ -8,116 +8,81 @@
 
 ## Installation
 
-### Quick Install (One-liner)
+### Prerequisites
+
+- **Node.js** 20+ and npm/yarn
+- (Optional) Access to an Aztec Node for RPC commands
+
+### Method 1: Install Script (Recommended)
 
 ```bash
 curl -L https://raw.githubusercontent.com/zkfrov/cazt/main/install.sh | bash
 ```
 
-Or using the install script directly:
+This installs `cazt` to `~/.cazt/bin` and adds it to your PATH.
+
+### Method 2: From Source
 
 ```bash
-bash <(curl -L https://raw.githubusercontent.com/zkfrov/cazt/main/install.sh)
+# Clone and build
+git clone https://github.com/zkfrov/cazt.git
+cd cazt/cazt-node
+yarn install
+yarn build
+
+# Install globally
+yarn install-global
 ```
 
-This will:
-- Install `cazt` to `~/.cazt/bin`
-- Add it to your PATH
-- Make it available as the `cazt` command
+After installation, restart your terminal or run:
+```bash
+# For zsh (macOS default)
+source ~/.zshrc
 
-### Manual Installation
+# For bash
+source ~/.bashrc
+```
 
-#### Prerequisites
+### Method 3: Development Setup
 
-- Node.js 18+ and npm/yarn
-- Access to an Aztec Node (or run locally)
-
-#### Install from source
+For local development without global installation:
 
 ```bash
 git clone https://github.com/zkfrov/cazt.git
 cd cazt/cazt-node
 yarn install
-yarn build
-```
 
-Then use it in one of these ways:
-
-**Option 1: Use the bin script directly**
-```bash
-./bin/cazt --help
-./bin/cazt address-zero
-```
-
-**Option 2: Add to PATH**
-```bash
-export PATH="$PATH:$(pwd)/bin"
-cazt --help
-```
-
-**Option 3: Create a symlink**
-```bash
-ln -s $(pwd)/bin/cazt /usr/local/bin/cazt
-cazt --help
-```
-
-**Option 4: Development mode (no build needed)**
-```bash
+# Use directly (no build needed)
 yarn start --help
 # or
 npx tsx cli/cli.ts --help
+
+# Or build and use locally
+yarn build
+./bin/cazt --help
 ```
 
-**Option 5: Install globally (after building)**
-```bash
-# Builds, installs globally, and sets up PATH automatically
-yarn install-global
-
-# The script will add npm global bin to your PATH
-# You may need to run: source ~/.zshrc (or ~/.bashrc)
-# Or just restart your terminal
-
-# Then use from anywhere
-cazt --help
-cazt address-zero
-```
-
-**Note**: If `cazt` command is not found after installation, manually add to PATH:
-```bash
-# For zsh (macOS default)
-echo 'export PATH="$(npm bin -g):$PATH"' >> ~/.zshrc && source ~/.zshrc
-
-# For bash
-echo 'export PATH="$(npm bin -g):$PATH"' >> ~/.bashrc && source ~/.bashrc
-```
-
-**Option 6: Development link (faster, no reinstall needed)**
-```bash
-# Creates a symlink (updates automatically when you rebuild)
-yarn link
-
-# Then use from anywhere
-cazt --help
-```
-
-### Installation via npm/npx
-
-Once published to npm, you can install globally:
+### Method 4: npm/npx (Once Published)
 
 ```bash
+# Global installation
 npm install -g cazt
-# or
-yarn global add cazt
+
+# Or use without installing
+npx cazt --help
 ```
 
-Or use `npx` to run without installing:
+**Note**: The package needs to be published to npm first. Until then, use Method 1 or 2.
+
+### Troubleshooting
+
+If `cazt` command is not found after installation:
 
 ```bash
-npx cazt --help
-npx cazt address-zero
+# Add npm global bin to PATH
+echo 'export PATH="$(npm bin -g):$PATH"' >> ~/.zshrc && source ~/.zshrc
+# (Use ~/.bashrc for bash)
 ```
-
-**Note**: The package needs to be published to npm first. Until then, use the installation script or install from source.
 
 ## Usage
 
