@@ -18,7 +18,7 @@
 ```bash
 # Clone and build
 git clone https://github.com/zkfrov/cazt.git
-cd cazt/cazt-node
+cd cazt
 yarn install
 yarn build
 
@@ -32,7 +32,7 @@ For local development without global installation:
 
 ```bash
 git clone https://github.com/zkfrov/cazt.git
-cd cazt/cazt-node
+cd cazt
 yarn install
 
 # Use directly (no build needed)
@@ -221,7 +221,7 @@ npx tsx cli/test.ts
 ### Project Structure
 
 ```
-cazt-node/
+cazt/
 ├── bin/
 │   └── cazt              # Wrapper script (executes dist/cli.js)
 ├── cli/                  # TypeScript source files
