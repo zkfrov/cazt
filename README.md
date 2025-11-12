@@ -36,16 +36,68 @@ This will:
 
 ```bash
 git clone https://github.com/zkfrov/cazt.git
-cd cazt
+cd cazt/cazt-node
 yarn install
 yarn build
 ```
 
-Then add to PATH:
+Then use it in one of these ways:
+
+**Option 1: Use the bin script directly**
 ```bash
-export PATH="$PATH:$(pwd)/dist"
-# Or create a symlink:
-ln -s $(pwd)/dist/index.js /usr/local/bin/cazt
+./bin/cazt --help
+./bin/cazt address-zero
+```
+
+**Option 2: Add to PATH**
+```bash
+export PATH="$PATH:$(pwd)/bin"
+cazt --help
+```
+
+**Option 3: Create a symlink**
+```bash
+ln -s $(pwd)/bin/cazt /usr/local/bin/cazt
+cazt --help
+```
+
+**Option 4: Development mode (no build needed)**
+```bash
+yarn start --help
+# or
+npx tsx cli/cli.ts --help
+```
+
+**Option 5: Install globally (after building)**
+```bash
+# Builds, installs globally, and sets up PATH automatically
+yarn install-global
+
+# The script will add npm global bin to your PATH
+# You may need to run: source ~/.zshrc (or ~/.bashrc)
+# Or just restart your terminal
+
+# Then use from anywhere
+cazt --help
+cazt address-zero
+```
+
+**Note**: If `cazt` command is not found after installation, manually add to PATH:
+```bash
+# For zsh (macOS default)
+echo 'export PATH="$(npm bin -g):$PATH"' >> ~/.zshrc && source ~/.zshrc
+
+# For bash
+echo 'export PATH="$(npm bin -g):$PATH"' >> ~/.bashrc && source ~/.bashrc
+```
+
+**Option 6: Development link (faster, no reinstall needed)**
+```bash
+# Creates a symlink (updates automatically when you rebuild)
+yarn link
+
+# Then use from anywhere
+cazt --help
 ```
 
 ### Installation via npm/npx
@@ -174,14 +226,39 @@ cazt contract call --address <address> --function <selector> --args <args>
 # Install dependencies
 yarn install
 
-# Build
+# Build (compiles TypeScript to dist/)
 yarn build
 
-# Run in development mode
-yarn dev
+# Run in development mode (no build needed, uses tsx)
+yarn start --help
+yarn start address-zero
 
-# Run tests (if available)
-yarn test
+# Or run directly with tsx
+npx tsx cli/cli.ts --help
+
+# Clean build artifacts
+yarn clean
+
+# Make cazt globally available (builds and installs)
+yarn install-global
+
+# Or use yarn link for development (creates symlink, faster)
+yarn link
+# Then use: cazt --help (from anywhere)
+```
+
+### Project Structure
+
+```
+cazt-node/
+├── bin/
+│   └── cazt              # Wrapper script (executes dist/cli.js)
+├── cli/                  # TypeScript source files
+│   ├── cli.ts           # Main CLI entry point
+│   ├── index.ts         # Library exports
+│   └── utils/           # Utility modules
+├── dist/                # Compiled JavaScript (generated)
+└── package.json
 ```
 
 ## Repository
