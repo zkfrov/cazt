@@ -158,12 +158,17 @@ cazt --rpc-url http://localhost:8080 block number
 
 ### Utility Commands
 
-- **Address utilities**: `address-zero`, `address-random`, `address-validate`, `address-from-field`, etc.
-- **Hash functions**: `keccak`, `sha256`, `poseidon2`, `secret-hash`, etc.
-- **Field operations**: `field-random`, `field-from-string`, `field-to-string`, `field-equals`, etc.
-- **Selector utilities**: `sig`, `selector-from-signature`, `event-selector`, `note-selector`, etc.
+- **Aztec Address utilities**: `address-zero`, `address-random`, `address-validate`, `address-from-field`, `address-to-point`, etc.
+- **Ethereum Address utilities**: `eth-address-zero`, `eth-address-random`, `eth-address-validate`, `eth-address-from-field`, `eth-address-to-field`, `eth-address-is-zero`
+- **Address computation**: `compute-contract-address`, `compute-partial-address`, `compute-preaddress`, `compute-address-from-keys`, `compute-salted-initialization-hash`, `compute-initialization-hash`
+- **Hash functions**: `keccak`, `sha256`, `poseidon2`, `secret-hash`, `hash-vk`, `var-args-hash`, `calldata-hash`, etc.
+- **Field operations**: `field-random`, `field-from-string`, `field-to-string`, `field-equals`, `field-is-zero`, `field-from-buffer`, `field-to-buffer`, etc.
+- **Selector utilities**: `sig`, `selector-from-signature`, `event-selector`, `note-selector`, `selector-from-field`, etc.
 - **ABI encoding/decoding**: `abi-encode`, `abi-decode`, `decode-function-signature`
-- **Contract artifacts**: `artifact-hash`, `load-contract-artifact`, etc.
+- **Contract artifacts**: `artifact-hash`, `artifact-hash-preimage`, `artifact-metadata-hash`, `function-artifact-hash`, `load-contract-artifact`, etc.
+- **Note & Nullifier utilities**: `silo-nullifier`, `silo-note-hash`, `unique-note-hash`, `note-hash-nonce`, `silo-private-log`
+- **Message utilities**: `l1-to-l2-message-nullifier`, `l2-to-l1-message-hash`
+- **Storage utilities**: `public-data-slot`
 
 ### RPC Commands
 
@@ -210,8 +215,21 @@ cazt keccak "hello world"
 # Compute function selector
 cazt sig "transfer(address,uint256)"
 
-# Validate an address
+# Validate an Aztec address
 cazt address-validate "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+# Validate an Ethereum address
+cazt eth-address-validate "0x0000000000000000000000000000000000000000"
+
+# Get zero addresses
+cazt address-zero
+cazt eth-address-zero
+
+# Compute Poseidon2 hash
+cazt poseidon2 '["0x1","0x2"]'
+
+# Silo a nullifier
+cazt silo-nullifier --contract <address> --nullifier <value>
 
 # Get block number (requires running node)
 cazt block number
@@ -245,6 +263,11 @@ yarn install-global
 # Or use yarn link for development (creates symlink, faster)
 yarn link
 # Then use: cazt --help (from anywhere)
+
+# Run tests
+yarn test
+# or
+npx tsx cli/test.ts
 ```
 
 ### Project Structure
@@ -256,6 +279,7 @@ cazt-node/
 ├── cli/                  # TypeScript source files
 │   ├── cli.ts           # Main CLI entry point
 │   ├── index.ts         # Library exports
+│   ├── test.ts          # Test suite
 │   └── utils/           # Utility modules
 ├── dist/                # Compiled JavaScript (generated)
 └── package.json

@@ -701,6 +701,68 @@ program.command('contract-artifact-from-buffer').description('Deserialize contra
   console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
 });
 
+// EthAddress utilities
+program.command('eth-address-zero').description('Get zero Ethereum address').action(async () => {
+  const result = AztecUtilities.ethAddressZero();
+  outputResult(result, program.opts().json);
+});
+
+program.command('eth-address-random').description('Generate random Ethereum address').action(async () => {
+  const result = await AztecUtilities.ethAddressRandom();
+  outputResult(result, program.opts().json);
+});
+
+program.command('eth-address-validate').description('Validate Ethereum address format').argument('<address>', 'Address to validate').action(async (address: string) => {
+  const result = AztecUtilities.ethAddressValidate(address);
+  console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
+});
+
+program.command('eth-address-from-field').description('Create Ethereum address from field').argument('<field>', 'Field value').action(async (field: string) => {
+  const result = AztecUtilities.ethAddressFromField(field);
+  outputResult(result, program.opts().json);
+});
+
+program.command('eth-address-to-field').description('Convert Ethereum address to field').argument('<address>', 'Ethereum address').action(async (address: string) => {
+  const result = AztecUtilities.ethAddressToField(address);
+  outputResult(result, program.opts().json);
+});
+
+program.command('eth-address-is-zero').description('Check if Ethereum address is zero').argument('<address>', 'Ethereum address').action(async (address: string) => {
+  const result = AztecUtilities.ethAddressIsZero(address);
+  outputResult(result.toString(), program.opts().json);
+});
+
+// Address computation utilities
+program.command('compute-contract-address').description('Compute contract address from instance').argument('<instance>', 'Contract instance JSON').action(async (instance: string) => {
+  const result = await AztecUtilities.computeContractAddress(instance);
+  outputResult(result, program.opts().json);
+});
+
+program.command('compute-partial-address').description('Compute partial address').argument('<instance>', 'Contract instance JSON').action(async (instance: string) => {
+  const result = await AztecUtilities.computePartialAddress(instance);
+  outputResult(result, program.opts().json);
+});
+
+program.command('compute-preaddress').description('Compute preaddress').argument('<params>', 'JSON object with publicKeysHash and partialAddress').action(async (params: string) => {
+  const result = await AztecUtilities.computePreaddress(params);
+  outputResult(result, program.opts().json);
+});
+
+program.command('compute-address-from-keys').description('Compute address from public keys and partial address').argument('<params>', 'JSON object with publicKeys and partialAddress').action(async (params: string) => {
+  const result = await AztecUtilities.computeAddressFromKeys(params);
+  outputResult(result, program.opts().json);
+});
+
+program.command('compute-salted-initialization-hash').description('Compute salted initialization hash').argument('<params>', 'JSON object with initializationHash, salt, and deployer').action(async (params: string) => {
+  const result = await AztecUtilities.computeSaltedInitializationHash(params);
+  outputResult(result, program.opts().json);
+});
+
+program.command('compute-initialization-hash').description('Compute initialization hash').argument('<params>', 'JSON object with initFn (optional) and args').action(async (params: string) => {
+  const result = await AztecUtilities.computeInitializationHash(params);
+  outputResult(result, program.opts().json);
+});
+
 // Helper function to read from stdin
 async function readStdin(): Promise<string> {
   const rl = readline.createInterface({
