@@ -3,7 +3,6 @@
 import { Command } from 'commander';
 import { RpcClient, parseJsonOrFile } from './utils/rpc.js';
 import { AztecUtilities } from './utils/utilities.js';
-import { readFileSync } from 'fs';
 import * as readline from 'readline';
 
 const program = new Command();
@@ -239,6 +238,147 @@ logsCmd.command('by-tags').description('Get logs by tags').requiredOption('--tag
   const result = await client.call('node_getLogsByTags', params);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
+
+// Notes commands
+const notesCmd = program.command('notes').description('Note queries');
+notesCmd
+  .command('fetch')
+  .description('Fetch notes from wallet for a storage slot')
+  .requiredOption('--contract <address>', 'Contract address (required)')
+  .requiredOption('--artifact <json>', 'Contract artifact JSON file path or JSON string (required)')
+  .option('--contract-secret-key <key>', 'Secret key (Fr) for contract registration (optional)')
+  .option('--sender <sender>', 'Sender address (AztecAddress) - required for scopes filtering, will be registered with wallet')
+  .option('--storage-slot <slot>', 'Storage slot (Fr) - optional, can be a number or field value')
+  .option('--storage-slot-name <name>', 'Storage slot name from artifact (e.g., "balances") - optional, alternative to --storage-slot')
+  .option('--storage-slot-key <key>', 'Key for deriving slot in map (e.g., user address) - optional, required if --storage-slot-name is provided for map slots')
+  .option('--secret-key <key>', 'Secret key (Fr) for account creation - can be provided multiple times or comma-separated')
+  .option('--secret-keys <keys>', 'Comma-separated list of secret keys (Fr) for account creation - alternative to multiple --secret-key')
+  .option('--salt <salt>', 'Salt (Fr) for account creation - can be provided multiple times or comma-separated (defaults to 0 if not provided)')
+  .option('--salts <salts>', 'Comma-separated list of salts (Fr) for account creation - alternative to multiple --salt (defaults to 0 if not provided)')
+  .option('--status <status>', 'Note status (ACTIVE | CANCELLED | SETTLED)', 'ACTIVE')
+  .option('--siloed-nullifier <nullifier>', 'Siloed nullifier (Fr) - optional')
+  .option('--scopes <addresses>', 'Comma-separated list of scope addresses - optional')
+  .option('--node-url <url>', 'Node URL', process.env.CAZT_RPC_URL || 'http://localhost:8080')
+  .option('--debug', 'Enable debug logging', false)
+  .action(async (options) => {
+    const params: any = {
+      contractAddress: options.contract,
+      nodeUrl: options.nodeUrl,
+      debug: options.debug || false,
+    };
+    
+    // Artifact is required
+    params.artifact = parseJsonOrFile(options.artifact);
+    
+    if (options.sender) {
+      params.sender = options.sender;
+    }
+
+    // Storage slot options
+    if (options.storageSlot) {
+      params.storageSlot = options.storageSlot;
+    }
+
+    if (options.storageSlotName) {
+      params.storageSlotName = options.storageSlotName;
+    }
+
+    if (options.storageSlotKey) {
+      params.storageSlotKey = options.storageSlotKey;
+    }
+
+    // Handle multiple secret keys
+    const secretKeys: string[] = [];
+    if (options.secretKeys) {
+      // Comma-separated list
+      secretKeys.push(...options.secretKeys.split(',').map((s: string) => s.trim()));
+    }
+    // Commander allows multiple --secret-key flags, they come as an array
+    if (options.secretKey) {
+      if (Array.isArray(options.secretKey)) {
+        secretKeys.push(...options.secretKey);
+      } else {
+        secretKeys.push(options.secretKey);
+      }
+    }
+    if (secretKeys.length > 0) {
+      params.secretKeys = secretKeys;
+    }
+
+    // Handle multiple salts
+    const salts: string[] = [];
+    if (options.salts) {
+      // Comma-separated list
+      salts.push(...options.salts.split(',').map((s: string) => s.trim()));
+    }
+    // Commander allows multiple --salt flags, they come as an array
+    if (options.salt) {
+      if (Array.isArray(options.salt)) {
+        salts.push(...options.salt);
+      } else {
+        salts.push(options.salt);
+      }
+    }
+    if (salts.length > 0) {
+      params.salts = salts;
+    }
+
+    // Validate that if sender is provided, we should have secret keys for account creation
+    if (options.sender && secretKeys.length === 0) {
+      console.warn('Warning: Sender address provided but secret-key(s) are missing. Account creation will be skipped.');
+    }
+
+    if (options.contractSecretKey) {
+      params.contractSecretKey = options.contractSecretKey;
+    }
+
+    try {
+      const result = await AztecUtilities.fetchNotes(JSON.stringify(params));
+      console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
+    } catch (error: any) {
+      console.error(`Error fetching notes: ${error.message}`);
+      process.exit(1);
+    }
+  });
+
+// Note slot utility
+program
+  .command('note-slot')
+  .description('Derive storage slot in a map')
+  .requiredOption('--base-slot <slot>', 'Base storage slot (Fr)')
+  .requiredOption('--key <key>', 'Key for the map (AztecAddress or Fr)')
+  .action(async (options) => {
+    const params = JSON.stringify({
+      baseSlot: options.baseSlot,
+      key: options.key,
+    });
+    
+    try {
+      const result = await AztecUtilities.deriveNoteSlot(params);
+      outputResult(result, program.opts().json);
+    } catch (error: any) {
+      console.error(`Error deriving note slot: ${error.message}`);
+      process.exit(1);
+    }
+  });
+
+// Storage layout command
+program
+  .command('storage-layout')
+  .description('Get storage layout from contract artifact')
+  .requiredOption('--artifact <json>', 'Contract artifact JSON file path or JSON string (required)')
+  .action(async (options) => {
+    const artifact = parseJsonOrFile(options.artifact);
+    const params = JSON.stringify({ artifact });
+    
+    try {
+      const result = AztecUtilities.getStorageLayout(params);
+      console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
+    } catch (error: any) {
+      console.error(`Error getting storage layout: ${error.message}`);
+      process.exit(1);
+    }
+  });
 
 // Contract commands
 const contractCmd = program.command('contract').description('Contract queries');

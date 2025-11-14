@@ -31,6 +31,7 @@
     "@aztec/aztec.js": "3.0.0-devnet.2",
     "@aztec/foundation": "3.0.0-devnet.2",
     "@aztec/stdlib": "3.0.0-devnet.2",
+    "@aztec/test-wallet": "3.0.0-devnet.2",
     "commander": "^12.1.0",
     "node-fetch": "^3.3.2"
   },

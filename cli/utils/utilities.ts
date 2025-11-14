@@ -32,6 +32,7 @@ import {
   computePublicDataTreeLeafSlot,
   computeL1ToL2MessageNullifier,
   computeL2ToL1MessageHash,
+  deriveStorageSlotInMap,
 } from '@aztec/stdlib/hash';
 import { keccak256, sha256ToField, poseidon2Hash } from '@aztec/foundation/crypto';
 import { EthAddress } from '@aztec/foundation/eth-address';
@@ -47,6 +48,10 @@ import {
   computeInitializationHash,
 } from '@aztec/stdlib/contract';
 import { computePreaddress, computeAddress } from '@aztec/stdlib/keys';
+import { createAztecNodeClient, waitForNode } from '@aztec/aztec.js/node';
+import { TestWallet } from '@aztec/test-wallet/server';
+import { NoteStatus, Note } from '@aztec/stdlib/note';
+import { Contract } from '@aztec/aztec.js/contracts';
 
 export class AztecUtilities {
   // Hash utilities
@@ -553,5 +558,445 @@ export class AztecUtilities {
     const result = await computeInitializationHash(initFn, args);
     return result.toString();
   }
-}
 
+  /**
+   * Derive storage slot in a map
+   * @param params - JSON string with:
+   *   - baseSlot: string - Base storage slot (Fr)
+   *   - key: string - Key for the map (can be AztecAddress or Fr)
+   * @returns Derived storage slot
+   */
+  static async deriveNoteSlot(params: string): Promise<string> {
+    const p = JSON.parse(params);
+    const baseSlot = this.stringToFr(p.baseSlot);
+    
+    // Key can be an AztecAddress or a field
+    let keyFr: Fr;
+    try {
+      // Try as AztecAddress first
+      const keyAddress = AztecAddress.fromString(p.key);
+      keyFr = keyAddress.toField();
+    } catch {
+      // If not an address, treat as field
+      keyFr = this.stringToFr(p.key);
+    }
+    
+    const result = await deriveStorageSlotInMap(baseSlot, { toField: () => keyFr });
+    return result.toString();
+  }
+
+  /**
+   * Get storage layout from contract artifact
+   * @param params - JSON string with:
+   *   - artifact: any - Contract artifact JSON (NoirCompiledContract)
+   * @returns Storage layout information
+   */
+  static getStorageLayout(params: string): any {
+    const p = JSON.parse(params);
+    const artifactJson = p.artifact;
+    
+    if (!artifactJson) {
+      throw new Error('artifact is required');
+    }
+    
+    // Load the contract artifact
+    let contractArtifact;
+    try {
+      contractArtifact = loadContractArtifact(artifactJson as any);
+    } catch (error: any) {
+      throw new Error(`Failed to load contract artifact: ${error.message}`);
+    }
+    
+    if (!contractArtifact.storageLayout) {
+      return {
+        error: 'Contract artifact does not have storageLayout',
+        artifactName: contractArtifact.name,
+      };
+    }
+    
+    // Format storage layout for output
+    const layout: any = {};
+    for (const [name, slotInfo] of Object.entries(contractArtifact.storageLayout)) {
+      layout[name] = {
+        slot: (slotInfo as any).slot?.toString(),
+        typ: (slotInfo as any).typ,
+      };
+    }
+    
+    return {
+      artifactName: contractArtifact.name,
+      storageLayout: layout,
+    };
+  }
+
+  /**
+   * Fetch notes from a wallet for a given storage slot
+   * @param params - JSON string with:
+   *   - nodeUrl?: string - Node URL (default: 'http://localhost:8080')
+   *   - sender: string - Sender address (AztecAddress) - optional, used for scopes filtering
+   *   - storageSlot?: string - Storage slot (Fr) - optional, can be a number or field
+   *   - storageSlotName?: string - Storage slot name from artifact (e.g., "balances") - optional
+   *   - storageSlotKey?: string - Key for deriving slot in map (e.g., user address) - optional, required if storageSlotName is provided
+   *   - contractAddress: string - Contract address (required)
+   *   - status?: string - Note status ('ACTIVE' | 'CANCELLED' | 'SETTLED') - optional, defaults to 'ACTIVE'
+   *   - siloedNullifier?: string - Siloed nullifier (Fr) - optional
+   *   - scopes?: string[] - Array of scope addresses - optional
+   *   - artifact: any - Contract artifact JSON (NoirCompiledContract) - required
+   *   - contractSecretKey?: string - Secret key (Fr) for contract registration (optional)
+   *   - secretKeys?: string[] - Array of secret keys (Fr) for account creation - optional
+   *   - salts?: string[] - Array of salts (Fr) for account creation - optional, defaults to Fr.ZERO for each
+   *   - debug?: boolean - Enable debug logging (optional, defaults to false)
+   * @returns Array of notes
+   */
+  static async fetchNotes(params: string): Promise<any> {
+    const p = JSON.parse(params);
+    const debug = p.debug || false;
+    
+    // Helper function for conditional debug logging
+    const debugLog = (...args: any[]) => {
+      if (debug) {
+        console.log(...args);
+      }
+    };
+    
+    debugLog(`[DEBUG] Starting fetchNotes with params:`, {
+      nodeUrl: p.nodeUrl || 'http://localhost:8080',
+      hasSender: !!p.sender,
+      hasContractAddress: !!p.contractAddress,
+      hasArtifact: !!p.artifact,
+      storageSlot: p.storageSlot,
+      storageSlotName: p.storageSlotName,
+      storageSlotKey: p.storageSlotKey,
+      secretKeysCount: p.secretKeys?.length || (p.secretKey ? 1 : 0),
+      saltsCount: p.salts?.length || (p.salt ? 1 : 0),
+    });
+    
+    const nodeUrl = p.nodeUrl || 'http://localhost:8080';
+    const senderAddress = p.sender ? AztecAddress.fromString(p.sender) : undefined;
+    const contractAddress = p.contractAddress ? AztecAddress.fromString(p.contractAddress) : undefined;
+    const artifactJson = p.artifact;
+    const contractSecretKey = p.contractSecretKey ? this.stringToFr(p.contractSecretKey) : undefined;
+    
+    // Support both single and multiple secret keys
+    const secretKeys: Fr[] = [];
+    if (p.secretKeys && Array.isArray(p.secretKeys)) {
+      secretKeys.push(...p.secretKeys.map((sk: string) => this.stringToFr(sk)));
+      debugLog(`[DEBUG] Loaded ${secretKeys.length} secret keys from array`);
+    } else if (p.secretKey) {
+      // Backward compatibility: single secret key
+      secretKeys.push(this.stringToFr(p.secretKey));
+      debugLog(`[DEBUG] Loaded single secret key`);
+    }
+    
+    // Support both single and multiple salts
+    const salts: Fr[] = [];
+    if (p.salts && Array.isArray(p.salts)) {
+      salts.push(...p.salts.map((s: string) => this.stringToFr(s)));
+      debugLog(`[DEBUG] Loaded ${salts.length} salts from array`);
+    } else if (p.salt) {
+      // Backward compatibility: single salt
+      salts.push(this.stringToFr(p.salt));
+      debugLog(`[DEBUG] Loaded single salt`);
+    }
+    
+    const status = p.status || 'ACTIVE';
+    const siloedNullifier = p.siloedNullifier ? this.stringToFr(p.siloedNullifier) : undefined;
+    const scopes = p.scopes ? p.scopes.map((addr: string) => AztecAddress.fromString(addr)) : undefined;
+    const storageSlotName = p.storageSlotName;
+    const storageSlotKey = p.storageSlotKey;
+
+    // Contract address is required for NotesFilter
+    if (!contractAddress) {
+      throw new Error('contractAddress is required');
+    }
+    debugLog(`[DEBUG] Contract address: ${contractAddress.toString()}`);
+
+    // Artifact is required
+    if (!artifactJson) {
+      throw new Error('artifact is required (provide the Noir compiled contract JSON)');
+    }
+    debugLog(`[DEBUG] Artifact provided:`, typeof artifactJson === 'object' ? artifactJson.name || 'unnamed' : 'string/json');
+
+    // Load the contract artifact from the JSON (NoirCompiledContract -> ContractArtifact)
+    let contractArtifact;
+    try {
+      debugLog(`[DEBUG] Loading contract artifact...`);
+      contractArtifact = loadContractArtifact(artifactJson as any);
+      debugLog(`[DEBUG] Contract artifact loaded:`, {
+        name: contractArtifact.name,
+        hasStorageLayout: !!contractArtifact.storageLayout,
+        storageLayoutKeys: contractArtifact.storageLayout ? Object.keys(contractArtifact.storageLayout) : [],
+        functionsCount: contractArtifact.functions?.length || 0,
+      });
+    } catch (error: any) {
+      throw new Error(`Failed to load contract artifact: ${error.message}`);
+    }
+
+    // Determine storage slot - either from direct value or from artifact name
+    let storageSlot: Fr | undefined;
+    
+    if (p.storageSlot) {
+      // Direct storage slot provided
+      storageSlot = this.stringToFr(p.storageSlot);
+      debugLog(`[DEBUG] Using direct storage slot: ${storageSlot.toString()}`);
+    } else if (storageSlotName) {
+      // Storage slot name provided - look it up in artifact
+      debugLog(`[DEBUG] Looking up storage slot name: "${storageSlotName}"`);
+      if (!contractArtifact.storageLayout) {
+        throw new Error('Contract artifact does not have storageLayout');
+      }
+      
+      const baseSlotInfo = contractArtifact.storageLayout[storageSlotName];
+      if (!baseSlotInfo) {
+        throw new Error(`Storage slot "${storageSlotName}" not found in contract artifact. Available slots: ${Object.keys(contractArtifact.storageLayout).join(', ')}`);
+      }
+      
+      const baseSlot = baseSlotInfo.slot;
+      debugLog(`[DEBUG] Found base slot for "${storageSlotName}": ${baseSlot.toString()}`);
+      
+      if (storageSlotKey) {
+        // Derive slot for map with key using the utility function
+        debugLog(`[DEBUG] Deriving slot with key: ${storageSlotKey}`);
+        const keyFr = this.stringToFr(storageSlotKey);
+        // Try as AztecAddress first, then as field
+        let keyForDerivation: { toField: () => Fr };
+        try {
+          const keyAddress = AztecAddress.fromString(storageSlotKey);
+          keyForDerivation = { toField: () => keyAddress.toField() };
+          debugLog(`[DEBUG] Key interpreted as AztecAddress: ${keyAddress.toString()}`);
+        } catch {
+          keyForDerivation = { toField: () => keyFr };
+          debugLog(`[DEBUG] Key interpreted as Field: ${keyFr.toString()}`);
+        }
+        
+        storageSlot = await deriveStorageSlotInMap(baseSlot, keyForDerivation);
+        debugLog(`[DEBUG] Derived storage slot: ${storageSlot.toString()}`);
+      } else {
+        // Use base slot directly
+        storageSlot = baseSlot;
+        debugLog(`[DEBUG] Using base slot directly: ${storageSlot.toString()}`);
+      }
+    } else {
+      debugLog(`[DEBUG] No storage slot specified`);
+    }
+
+    // Create node client and wait for it to be ready
+    debugLog(`[DEBUG] Creating node client for: ${nodeUrl}`);
+    const node = createAztecNodeClient(nodeUrl);
+    await waitForNode(node);
+    debugLog(`[DEBUG] Node is ready`);
+
+    // Create wallet using TestWallet
+    debugLog(`[DEBUG] Creating TestWallet...`);
+    const wallet = await TestWallet.create(node, {
+      proverEnabled: false,
+    });
+    debugLog(`[DEBUG] Wallet created`);
+
+    // Get PXE from wallet - TestWallet should have a pxe property
+    const pxe = (wallet as any).pxe || (wallet as any).getPXE?.();
+    if (!pxe) {
+      throw new Error('Unable to access PXE from wallet');
+    }
+    debugLog(`[DEBUG] PXE accessed from wallet`);
+
+    let contractInstance = await node.getContract(contractAddress);
+    debugLog(`[DEBUG] Got contract instance from node:`, {
+      address: contractInstance?.address.toString(),
+    });
+    await pxe.registerContract({ instance: contractInstance, artifact: contractArtifact });
+    debugLog(`[DEBUG] Contract registered in PXE`);
+
+    let accountManagers: any[] = [];
+    
+    // Register sender address if provided
+    if (senderAddress) {
+      debugLog(`[DEBUG] Registering sender address: ${senderAddress.toString()}`);
+      await wallet.registerSender(senderAddress);
+      debugLog(`[DEBUG] Sender address registered`);
+    } else {
+      debugLog(`[DEBUG] No sender address provided`);
+    }
+
+    // Create multiple accounts if secret keys are provided
+    if (secretKeys.length > 0) {
+      debugLog(`[DEBUG] Creating ${secretKeys.length} account(s)...`);
+      
+      for (let i = 0; i < secretKeys.length; i++) {
+        const secretKey = secretKeys[i];
+        // Use corresponding salt, or Fr.ZERO if not provided
+        const saltToUse = i < salts.length ? salts[i] : Fr.ZERO;
+        
+        debugLog(`[DEBUG] Creating account ${i + 1}/${secretKeys.length}:`, {
+          secretKey: secretKey.toString().substring(0, 20) + '...',
+          salt: saltToUse.toString(),
+        });
+        const accountManager = await wallet.createSchnorrAccount(secretKey, saltToUse);
+        accountManagers.push(accountManager);
+        debugLog(`[DEBUG] Account ${i + 1} created:`, {
+          address: accountManager.address.toString(),
+        });
+      }
+    } else {
+      debugLog(`[DEBUG] No secret keys provided for account creation`);
+    }
+
+    // Register the contract with the loaded artifact
+    // contractSecretKey is optional - if not provided, contract will be registered without decryption key
+    debugLog(`[DEBUG] Registering contract in wallet:`, {
+      address: contractAddress.toString(),
+      artifactName: contractArtifact.name || 'unknown',
+      hasSecretKey: !!contractSecretKey,
+    });
+
+    try {
+      // Get contract metadata to verify it exists
+      debugLog(`[DEBUG] Checking contract metadata...`);
+      const contractMetadata = await pxe.getContractMetadata(contractAddress);
+      if (!contractMetadata) {
+        throw new Error(`Contract not found at address ${contractAddress}`);
+      }
+      debugLog(`[DEBUG] Contract metadata:`, {
+        isContractPublished: contractMetadata.isContractPublished,
+        contractClassId: contractMetadata.contractClassId?.toString(),
+      });
+
+      // Register the contract with the loaded artifact and optional secret key
+      await wallet.registerContract(
+        contractAddress,
+        contractArtifact,
+        contractSecretKey || undefined
+      );
+      debugLog(`[DEBUG] Contract registered successfully in wallet`);
+    } catch (error: any) {
+      debugLog(`[DEBUG] Registration error:`, error.message);
+      debugLog(`[DEBUG] Error stack:`, error.stack);
+      // If registration fails, it might already be registered, so continue
+      // Only throw if it's a critical error
+      if (!error.message?.includes('already registered') && 
+          !error.message?.includes('already exists') &&
+          !error.message?.includes('has not been registered')) {
+        throw new Error(`Failed to register contract: ${error.message}`);
+      } else {
+        debugLog(`[DEBUG] Contract may already be registered, continuing...`);
+      }
+    }
+
+    // Determine scopes - combine provided scopes with all account manager addresses
+    debugLog(`[DEBUG] Determining scopes...`);
+    let finalScopes: AztecAddress[] = [];
+    
+    // Add provided scopes
+    if (scopes && scopes.length > 0) {
+      finalScopes.push(...scopes);
+      debugLog(`[DEBUG] Added ${scopes.length} provided scope(s):`, scopes.map((a: AztecAddress) => a.toString()));
+    }
+    
+    // Add all account manager addresses to scopes
+    if (accountManagers.length > 0) {
+      const accountAddresses = accountManagers.map(am => am.address);
+      finalScopes.push(...accountAddresses);
+      debugLog(`[DEBUG] Added ${accountManagers.length} account manager address(es) to scopes:`, accountAddresses.map((a: AztecAddress) => a.toString()));
+    }
+    
+    // Remove duplicates
+    const uniqueScopes = Array.from(new Set(finalScopes.map(addr => addr.toString())))
+      .map(addrStr => AztecAddress.fromString(addrStr));
+    
+    if (uniqueScopes.length === 0) {
+      debugLog(`[DEBUG] No scopes specified`);
+    } else {
+      debugLog(`[DEBUG] Final scopes (${uniqueScopes.length}):`, uniqueScopes.map(a => a.toString()));
+    }
+
+    // Build NotesFilter according to the type definition
+    debugLog(`[DEBUG] Building notes filter...`);
+    const notesFilter: any = {
+      contractAddress: contractAddress,
+    };
+
+    // Add optional fields
+    if (storageSlot) {
+      notesFilter.storageSlot = storageSlot;
+      debugLog(`[DEBUG] Storage slot in filter: ${storageSlot.toString()}`);
+    }
+
+    if (status) {
+      notesFilter.status = NoteStatus[status as keyof typeof NoteStatus] || NoteStatus.ACTIVE;
+      debugLog(`[DEBUG] Status in filter: ${status}`);
+    }
+
+    if (siloedNullifier) {
+      notesFilter.siloedNullifier = siloedNullifier;
+      debugLog(`[DEBUG] Siloed nullifier in filter: ${siloedNullifier.toString()}`);
+    }
+
+    if (uniqueScopes.length > 0) {
+      notesFilter.scopes = uniqueScopes;
+      debugLog(`[DEBUG] Scopes in filter (${uniqueScopes.length}):`, uniqueScopes.map(a => a.toString()));
+    }
+
+    // Get notes from PXE
+    debugLog(`[DEBUG] Fetching notes with filter:`, JSON.stringify(notesFilter, (key, value) => {
+      if (value && typeof value === 'object' && 'toField' in value) {
+        return value.toString();
+      }
+      if (value && typeof value === 'object' && Array.isArray(value)) {
+        return value.map(v => v.toString ? v.toString() : v);
+      }
+      return value;
+    }, 2));
+    
+    const notes = await pxe.getNotes(notesFilter);
+
+    debugLog(`[DEBUG] Found ${notes.length} note(s)`);
+
+    // Deserialize notes - replace the "note" buffer with deserialized fields
+    if (notes.length > 0) {
+      debugLog(`[DEBUG] Deserializing ${notes.length} note(s)...`);
+    
+      const deserializedNotes = notes.map((note: any, index: number) => {
+        try {
+          debugLog(`[DEBUG] Processing note ${index + 1}/${notes.length}...`);
+    
+          const items = note.note?.items ?? [];
+    
+          debugLog(
+            `[DEBUG] Note ${index + 1} deserialized, fields count: ${items.length}`,
+          );
+          debugLog(
+            `[DEBUG] Note ${index + 1} fields:`,
+            items.map((f: any) => f.toString()),
+          );
+    
+          return {
+            ...note,
+            // replace the "note" property with plain strings
+            note: items.map((f: any) => f.toString()),
+          };
+        } catch (error: any) {
+          debugLog(
+            `[DEBUG] Failed to deserialize note ${index + 1}:`,
+            error.message,
+          );
+          debugLog(`[DEBUG] Error stack:`, error.stack);
+          return {
+            ...note,
+            deserializeError: error.message,
+          };
+        }
+      });
+    
+      debugLog(
+        `[DEBUG] Successfully deserialized ${deserializedNotes.length} note(s)`,
+      );
+      return {
+        notes: deserializedNotes,
+      };
+    } else {
+      return {
+        notes: [],
+      };
+    }
+  }
+}

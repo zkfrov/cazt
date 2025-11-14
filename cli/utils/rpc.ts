@@ -1,5 +1,6 @@
 import fetch from 'node-fetch';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
+import { resolve } from 'path';
 
 export interface RpcClientOptions {
   rpcUrl: string;
@@ -54,11 +55,29 @@ export class RpcClient {
 }
 
 export function parseJsonOrFile(input: string): any {
+  // Handle @ prefix (explicit file indicator)
   if (input.startsWith('@')) {
     const filePath = input.slice(1);
     const content = readFileSync(filePath, 'utf-8');
     return JSON.parse(content);
   }
+  
+  // Try to treat as file path if it looks like one
+  // Check if it contains path separators or ends with .json
+  if (input.includes('/') || input.includes('\\') || input.endsWith('.json')) {
+    try {
+      // Resolve the path (handles relative paths)
+      const resolvedPath = resolve(input);
+      if (existsSync(resolvedPath)) {
+        const content = readFileSync(resolvedPath, 'utf-8');
+        return JSON.parse(content);
+      }
+    } catch (error) {
+      // If file doesn't exist or can't be read, fall through to JSON parsing
+    }
+  }
+  
+  // Otherwise, treat as JSON string
   return JSON.parse(input);
 }
 
