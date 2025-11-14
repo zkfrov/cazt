@@ -7,6 +7,9 @@ package-lock.json
 dist/
 *.tsbuildinfo
 
+# Aztec Standards
+.aztec-standards/
+
 # IDE
 .idea/
 .vscode/

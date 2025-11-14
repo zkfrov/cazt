@@ -10,6 +10,7 @@
   },
   "scripts": {
     "build": "tsc && chmod +x bin/cazt",
+    "build-aztec-standards": "npx tsx scripts/build-aztec-standards.ts origin/dev",
     "start": "tsx cli/cli.ts",
     "test": "tsx cli/test.ts",
     "clean": "rm -rf dist",
@@ -19,7 +20,8 @@
   "files": [
     "dist",
     "bin",
-    "README.md"
+    "README.md",
+    ".aztec-standards"
   ],
   "repository": {
     "type": "git",

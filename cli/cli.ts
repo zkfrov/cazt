@@ -4,6 +4,8 @@ import { Command } from 'commander';
 import { RpcClient, parseJsonOrFile } from './utils/rpc.js';
 import { AztecUtilities } from './utils/utilities.js';
 import * as readline from 'readline';
+import { readdirSync, existsSync } from 'fs';
+import { join, resolve } from 'path';
 
 const program = new Command();
 
@@ -245,7 +247,7 @@ notesCmd
   .command('fetch')
   .description('Fetch notes from wallet for a storage slot')
   .requiredOption('--contract <address>', 'Contract address (required)')
-  .requiredOption('--artifact <json>', 'Contract artifact JSON file path or JSON string (required)')
+  .requiredOption('--artifact <json>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string (required)')
   .option('--contract-secret-key <key>', 'Secret key (Fr) for contract registration (optional)')
   .option('--sender <sender>', 'Sender address (AztecAddress) - required for scopes filtering, will be registered with wallet')
   .option('--storage-slot <slot>', 'Storage slot (Fr) - optional, can be a number or field value')
@@ -337,6 +339,54 @@ notesCmd
       console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
     } catch (error: any) {
       console.error(`Error fetching notes: ${error.message}`);
+      process.exit(1);
+    }
+  });
+
+// Artifacts commands
+const artifactsCmd = program.command('artifacts').description('List available contract artifacts');
+artifactsCmd
+  .command('aztec')
+  .description('List all available Aztec contract artifacts')
+  .option('--full', 'Show full artifact details (default: show names only)', false)
+  .action(async (options) => {
+    try {
+      const result = AztecUtilities.listArtifacts(JSON.stringify({ source: 'aztec' }));
+      
+      if (options.full) {
+        console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
+      } else {
+        if (result.artifacts && Array.isArray(result.artifacts)) {
+          result.artifacts.forEach((artifact: any) => {
+            console.log(artifact.name);
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error(`Error listing artifacts: ${error.message}`);
+      process.exit(1);
+    }
+  });
+
+artifactsCmd
+  .command('standards')
+  .description('List all available Aztec Standards contract artifacts')
+  .option('--full', 'Show full artifact details (default: show names only)', false)
+  .action(async (options) => {
+    try {
+      const result = AztecUtilities.listArtifacts(JSON.stringify({ source: 'standards' }));
+      
+      if (options.full) {
+        console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
+      } else {
+        if (result.artifacts && Array.isArray(result.artifacts)) {
+          result.artifacts.forEach((artifact: any) => {
+            console.log(artifact.name);
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error(`Error listing artifacts: ${error.message}`);
       process.exit(1);
     }
   });
