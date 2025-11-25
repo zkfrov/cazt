@@ -34,7 +34,8 @@ import {
   computeL2ToL1MessageHash,
   deriveStorageSlotInMap,
 } from '@aztec/stdlib/hash';
-import { keccak256, sha256ToField, poseidon2Hash } from '@aztec/foundation/crypto';
+import { keccak256, sha256ToField, poseidon2Hash, poseidon2HashWithSeparator } from '@aztec/foundation/crypto';
+import { GeneratorIndex } from '@aztec/constants';
 import { EthAddress } from '@aztec/foundation/eth-address';
 import {
   computeArtifactHash,
@@ -1237,5 +1238,206 @@ export class AztecUtilities {
         notes: [],
       };
     }
+  }
+
+  /**
+   * Compute note hash from note content
+   * @param params JSON string with: { artifact, noteContent, storageSlot }
+   * @returns Promise<string> - the computed note hash
+   */
+  static async computeNoteHashFromContent(params: string): Promise<string> {
+    const p = JSON.parse(params);
+    const artifact = p.artifact;
+    const noteContent = p.noteContent;
+    const storageSlot = p.storageSlot;
+    const noteTypeName = p.noteTypeName;
+
+    if (!artifact) {
+      throw new Error('artifact is required');
+    }
+    if (!noteContent) {
+      throw new Error('noteContent is required');
+    }
+    if (storageSlot === undefined || storageSlot === null) {
+      throw new Error('storageSlot is required');
+    }
+
+    // Find the note type definition in the artifact
+    let noteAbi: any = null;
+    
+    // If noteTypeName is provided, try to find it in artifact.types
+    if (noteTypeName && artifact.types && artifact.types[noteTypeName]) {
+      noteAbi = artifact.types[noteTypeName];
+    }
+    
+    // Try to find note type in artifact.notes
+    if (!noteAbi && artifact.notes && Array.isArray(artifact.notes)) {
+      // If storage slot is provided, try to match by storage slot
+      const storageSlotFr = this.stringToFr(storageSlot);
+      const matchingNote = artifact.notes.find((note: any) => {
+        if (note.storageSlot !== undefined) {
+          return this.stringToFr(note.storageSlot).equals(storageSlotFr);
+        }
+        return false;
+      });
+      if (matchingNote && matchingNote.type) {
+        noteAbi = matchingNote.type;
+      } else if (artifact.notes.length > 0 && artifact.notes[0].type) {
+        // Fallback to first note type
+        noteAbi = artifact.notes[0].type;
+      }
+    }
+
+    // If not found in notes, try artifact.types
+    if (!noteAbi && artifact.types) {
+      // Look for struct types that might be notes
+      const structTypes = Object.values(artifact.types).filter((t: any) => t.kind === 'struct');
+      if (structTypes.length > 0) {
+        // Use the first struct type as a fallback
+        noteAbi = structTypes[0];
+      }
+    }
+
+    if (!noteAbi) {
+      throw new Error('Could not find note type definition in artifact. Please ensure the artifact contains note type definitions, or specify --note-type-name.');
+    }
+
+    // Encode the note content using the ABI encoder
+    const noteFields = encodeArguments(noteAbi, [noteContent]);
+
+    // Add storage slot
+    const storageSlotFr = this.stringToFr(storageSlot);
+    const inputs = [...noteFields, storageSlotFr];
+
+    // Hash with the NOTE_HASH generator index
+    const noteHash = await poseidon2HashWithSeparator(
+      inputs,
+      GeneratorIndex.NOTE_HASH
+    );
+
+    return noteHash.toString();
+  }
+
+  /**
+   * Verify if a note exists in a transaction
+   * @param params JSON string with: { txHash, noteHash?, contractAddress?, artifact?, noteContent?, storageSlot?, nodeUrl?, firstNullifier?, noteIndex?, noteTypeName? }
+   * @returns Promise<{ exists: boolean, baseNoteHash: string, siloedHash: string, uniqueHash?: string, noteHashes: string[] }>
+   */
+  static async verifyNoteInTransaction(params: string): Promise<any> {
+    const p = JSON.parse(params);
+    const txHash = p.txHash;
+    const noteHash = p.noteHash;
+    const contractAddress = p.contractAddress;
+    const artifact = p.artifact;
+    const noteContent = p.noteContent;
+    const storageSlot = p.storageSlot;
+    const nodeUrl = p.nodeUrl || 'http://localhost:8080';
+    const firstNullifier = p.firstNullifier;
+    const noteIndex = p.noteIndex;
+
+    if (!txHash) {
+      throw new Error('txHash is required');
+    }
+
+    // 1. Get base note hash - either provided directly or compute from content
+    let baseNoteHashStr: string;
+    let baseNoteHash: Fr;
+    
+    if (noteHash) {
+      // Use provided note hash directly
+      baseNoteHashStr = noteHash;
+      baseNoteHash = this.stringToFr(noteHash);
+    } else {
+      // Compute from note content
+      if (!contractAddress) {
+        throw new Error('contractAddress is required when computing hash from note content');
+      }
+      if (!artifact) {
+        throw new Error('artifact is required when computing hash from note content');
+      }
+      if (!noteContent) {
+        throw new Error('noteContent is required when computing hash from note content');
+      }
+      if (storageSlot === undefined || storageSlot === null) {
+        throw new Error('storageSlot is required when computing hash from note content');
+      }
+
+      const computeHashParams: any = {
+        artifact,
+        noteContent,
+        storageSlot,
+      };
+      if (p.noteTypeName) {
+        computeHashParams.noteTypeName = p.noteTypeName;
+      }
+      baseNoteHashStr = await this.computeNoteHashFromContent(JSON.stringify(computeHashParams));
+      baseNoteHash = this.stringToFr(baseNoteHashStr);
+    }
+
+    // 2. Silo it (if contract address is provided)
+    let siloedHash: Fr;
+    let siloedHashStr: string;
+    
+    if (contractAddress) {
+      const normalizedContract = this.normalizeAddress(contractAddress);
+      const contractAddr = AztecAddress.fromString(normalizedContract);
+      siloedHash = await siloNoteHash(contractAddr, baseNoteHash);
+      siloedHashStr = siloedHash.toString();
+    } else {
+      // If no contract address, use base hash as siloed hash (for comparison purposes)
+      siloedHash = baseNoteHash;
+      siloedHashStr = baseNoteHashStr;
+    }
+
+    // 3. Get transaction effects
+    const aztecNode = createAztecNodeClient(nodeUrl);
+    await waitForNode(aztecNode);
+    const txEffect = await aztecNode.getTxEffect(txHash);
+    
+    if (!txEffect) {
+      throw new Error(`Transaction ${txHash} not found`);
+    }
+
+    const noteHashes = txEffect.data.noteHashes || [];
+    const noteHashesStr = noteHashes.map((h: Fr) => h.toString());
+
+    // 4. If firstNullifier and noteIndex are provided, compute unique hash
+    let uniqueHash: string | undefined;
+    let exists = false;
+
+    if (firstNullifier !== undefined && noteIndex !== undefined) {
+      // Compute note hash nonce
+      const firstNullifierFr = this.stringToFr(firstNullifier);
+      const noteNonce = await computeNoteHashNonce(firstNullifierFr, parseInt(noteIndex));
+      
+      // Compute unique hash
+      const uniqueHashFr = await computeUniqueNoteHash(noteNonce, siloedHash);
+      uniqueHash = uniqueHashFr.toString();
+
+      // Check if it exists
+      exists = noteHashes.some((h: Fr) => h.equals(uniqueHashFr));
+    } else {
+      // Without unique hash, we can only check if the siloed hash matches any note hash
+      // This is less precise but still useful
+      exists = noteHashes.some((h: Fr) => h.equals(siloedHash));
+    }
+
+    // Try to get firstNullifier from txEffect if available
+    let firstNullifierFromTx: string | undefined;
+    if ('firstNullifier' in txEffect && txEffect.firstNullifier) {
+      firstNullifierFromTx = (txEffect.firstNullifier as Fr).toString();
+    } else if ('data' in txEffect && txEffect.data && 'firstNullifier' in txEffect.data) {
+      firstNullifierFromTx = (txEffect.data as any).firstNullifier?.toString();
+    }
+
+    return {
+      exists,
+      baseNoteHash: baseNoteHashStr,
+      siloedHash: siloedHashStr,
+      uniqueHash,
+      noteHashes: noteHashesStr,
+      firstNullifier: firstNullifierFromTx,
+      noteCount: noteHashes.length,
+    };
   }
 }

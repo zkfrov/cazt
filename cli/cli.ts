@@ -348,6 +348,103 @@ notesCmd
     }
   });
 
+notesCmd
+  .command('compute-hash')
+  .description('Compute note hash from note content manually')
+  .requiredOption('--artifact <json>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string (required)')
+  .requiredOption('--note-content <json>', 'Note content as JSON object or @file.json (required)')
+  .requiredOption('--storage-slot <slot>', 'Storage slot (Fr) - can be a number or field value (required)')
+  .option('--note-type-name <name>', 'Note type name from artifact (optional, for disambiguation)')
+  .action(async (options) => {
+    try {
+      const artifact = parseJsonOrFile(options.artifact);
+      const noteContent = parseJsonOrFile(options.noteContent);
+      
+      const params: any = {
+        artifact,
+        noteContent,
+        storageSlot: options.storageSlot,
+      };
+      
+      if (options.noteTypeName) {
+        params.noteTypeName = options.noteTypeName;
+      }
+      
+      const result = await AztecUtilities.computeNoteHashFromContent(JSON.stringify(params));
+      outputResult(result, program.opts().json);
+    } catch (error: any) {
+      console.error(`Error computing note hash: ${error.message}`);
+      process.exit(1);
+    }
+  });
+
+notesCmd
+  .command('verify')
+  .description('Verify if a note exists in a transaction')
+  .requiredOption('--tx-hash <hash>', 'Transaction hash (required)')
+  .option('--note-hash <hash>', 'Base note hash (default, use this or provide note content to compute)')
+  .option('--contract <address>', 'Contract address (required if computing hash from content, or if siloing hash)')
+  .option('--artifact <json>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string (required if computing hash from content)')
+  .option('--note-content <json>', 'Note content as JSON object or @file.json (required if computing hash from content)')
+  .option('--storage-slot <slot>', 'Storage slot (Fr) - can be a number or field value (required if computing hash from content)')
+  .option('--node-url <url>', 'Node URL', process.env.CAZT_RPC_URL || 'http://localhost:8080')
+  .option('--note-type-name <name>', 'Note type name from artifact (optional, for disambiguation when computing hash)')
+  .option('--first-nullifier <nullifier>', 'First nullifier from transaction (optional, for unique hash computation)')
+  .option('--note-index <index>', 'Note index in transaction (optional, for unique hash computation)')
+  .action(async (options) => {
+    try {
+      const params: any = {
+        txHash: options.txHash,
+        nodeUrl: options.nodeUrl,
+      };
+      
+      // If note hash is provided, use it directly
+      if (options.noteHash) {
+        params.noteHash = options.noteHash;
+        if (options.contract) {
+          params.contractAddress = options.contract;
+        }
+      } else {
+        // Otherwise, compute from note content
+        if (!options.contract) {
+          throw new Error('--contract is required when computing hash from note content');
+        }
+        if (!options.artifact) {
+          throw new Error('--artifact is required when computing hash from note content');
+        }
+        if (!options.noteContent) {
+          throw new Error('--note-content is required when computing hash from note content');
+        }
+        if (!options.storageSlot) {
+          throw new Error('--storage-slot is required when computing hash from note content');
+        }
+        
+        params.contractAddress = options.contract;
+        params.artifact = parseJsonOrFile(options.artifact);
+        params.noteContent = parseJsonOrFile(options.noteContent);
+        params.storageSlot = options.storageSlot;
+        
+        if (options.noteTypeName) {
+          params.noteTypeName = options.noteTypeName;
+        }
+      }
+      
+      if (options.firstNullifier) {
+        params.firstNullifier = options.firstNullifier;
+      }
+      
+      if (options.noteIndex) {
+        params.noteIndex = parseInt(options.noteIndex);
+      }
+      
+      const result = await AztecUtilities.verifyNoteInTransaction(JSON.stringify(params));
+      console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
+    } catch (error: any) {
+      console.error(`Error verifying note: ${error.message}`);
+      process.exit(1);
+    }
+  });
+
 // Artifacts commands
 const artifactsCmd = program.command('artifacts').description('List available contract artifacts');
 artifactsCmd
@@ -421,7 +518,7 @@ program
 program
   .command('storage-layout')
   .description('Get storage layout from contract artifact')
-  .requiredOption('--artifact <json>', 'Contract artifact JSON file path or JSON string (required)')
+  .requiredOption('--artifact <json>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string (required)')
   .action(async (options) => {
     const artifact = parseJsonOrFile(options.artifact);
     const params = JSON.stringify({ artifact });
@@ -811,29 +908,34 @@ program.command('field-equals').description('Compare two fields').argument('<fie
 });
 
 // Contract artifact utilities
-program.command('artifact-hash').description('Compute artifact hash').argument('<artifact>', 'Contract artifact JSON').action(async (artifact: string) => {
-  const result = await AztecUtilities.artifactHash(artifact);
+program.command('artifact-hash').description('Compute artifact hash').argument('<artifact>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (artifact: string) => {
+  const artifactObj = parseJsonOrFile(artifact);
+  const result = await AztecUtilities.artifactHash(JSON.stringify(artifactObj));
   outputResult(result, program.opts().json);
 });
 
-program.command('artifact-hash-preimage').description('Compute artifact hash preimage').argument('<artifact>', 'Contract artifact JSON').action(async (artifact: string) => {
-  const result = await AztecUtilities.artifactHashPreimage(artifact);
+program.command('artifact-hash-preimage').description('Compute artifact hash preimage').argument('<artifact>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (artifact: string) => {
+  const artifactObj = parseJsonOrFile(artifact);
+  const result = await AztecUtilities.artifactHashPreimage(JSON.stringify(artifactObj));
   // Object output - always JSON
   console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
 });
 
-program.command('artifact-metadata-hash').description('Compute artifact metadata hash').argument('<artifact>', 'Contract artifact JSON').action(async (artifact: string) => {
-  const result = AztecUtilities.artifactMetadataHash(artifact);
+program.command('artifact-metadata-hash').description('Compute artifact metadata hash').argument('<artifact>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (artifact: string) => {
+  const artifactObj = parseJsonOrFile(artifact);
+  const result = AztecUtilities.artifactMetadataHash(JSON.stringify(artifactObj));
   outputResult(result, program.opts().json);
 });
 
-program.command('function-artifact-hash').description('Compute function artifact hash').argument('<function>', 'Function artifact JSON').action(async (function_: string) => {
-  const result = await AztecUtilities.functionArtifactHash(function_);
+program.command('function-artifact-hash').description('Compute function artifact hash').argument('<function>', 'Function artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (function_: string) => {
+  const functionObj = parseJsonOrFile(function_);
+  const result = await AztecUtilities.functionArtifactHash(JSON.stringify(functionObj));
   outputResult(result, program.opts().json);
 });
 
-program.command('function-metadata-hash').description('Compute function metadata hash').argument('<function>', 'Function artifact JSON').action(async (function_: string) => {
-  const result = AztecUtilities.functionMetadataHash(function_);
+program.command('function-metadata-hash').description('Compute function metadata hash').argument('<function>', 'Function artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (function_: string) => {
+  const functionObj = parseJsonOrFile(function_);
+  const result = AztecUtilities.functionMetadataHash(JSON.stringify(functionObj));
   outputResult(result, program.opts().json);
 });
 
@@ -876,18 +978,21 @@ program.command('is-bounded-vec-struct').description('Check if ABI type is bound
 });
 
 // Contract artifact loading
-program.command('load-contract-artifact').description('Load contract artifact from Noir compiled contract').argument('<noir_contract>', 'Noir compiled contract JSON').action(async (noirContract: string) => {
-  const result = AztecUtilities.loadContractArtifact(noirContract);
+program.command('load-contract-artifact').description('Load contract artifact from Noir compiled contract').argument('<noir_contract>', 'Noir compiled contract JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (noirContract: string) => {
+  const contractObj = parseJsonOrFile(noirContract);
+  const result = AztecUtilities.loadContractArtifact(JSON.stringify(contractObj));
   console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
 });
 
-program.command('load-contract-artifact-for-public').description('Load contract artifact for public functions').argument('<noir_contract>', 'Noir compiled contract JSON').action(async (noirContract: string) => {
-  const result = AztecUtilities.loadContractArtifactForPublic(noirContract);
+program.command('load-contract-artifact-for-public').description('Load contract artifact for public functions').argument('<noir_contract>', 'Noir compiled contract JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (noirContract: string) => {
+  const contractObj = parseJsonOrFile(noirContract);
+  const result = AztecUtilities.loadContractArtifactForPublic(JSON.stringify(contractObj));
   console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
 });
 
-program.command('contract-artifact-to-buffer').description('Serialize contract artifact to buffer').argument('<artifact>', 'Contract artifact JSON').action(async (artifact: string) => {
-  const result = AztecUtilities.contractArtifactToBuffer(artifact);
+program.command('contract-artifact-to-buffer').description('Serialize contract artifact to buffer').argument('<artifact>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (artifact: string) => {
+  const artifactObj = parseJsonOrFile(artifact);
+  const result = AztecUtilities.contractArtifactToBuffer(JSON.stringify(artifactObj));
   outputResult(result, program.opts().json);
 });
 
