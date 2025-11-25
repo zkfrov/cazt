@@ -350,28 +350,91 @@ notesCmd
 
 notesCmd
   .command('compute-hash')
-  .description('Compute note hash from note content manually')
-  .requiredOption('--artifact <json>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string (required)')
-  .requiredOption('--note-content <json>', 'Note content as JSON object or @file.json (required)')
-  .requiredOption('--storage-slot <slot>', 'Storage slot (Fr) - can be a number or field value (required)')
-  .option('--note-type-name <name>', 'Note type name from artifact (optional, for disambiguation)')
+  .description('Compute note hash(es). Can compute from scratch (items + slot) or from existing hashes (raw -> siloed -> unique).')
+  .option('--raw-note-hash <hash>', 'Use existing raw note hash (skip computing from items)')
+  .option('--siloed-note-hash <hash>', 'Use existing siloed note hash (skip computing from raw hash, requires --contract)')
+  .option('--note-items <items>', 'Note items as comma-separated field values (e.g., "0x1,0x2,0x3") or JSON array or @file.json (required if not using --raw-note-hash or --siloed-note-hash)')
+  .option('--storage-slot <slot>', 'Storage slot (Fr) - required if computing from items')
+  .option('--partial', 'Use partial note hashing (2-step: commitment from private fields + storage slot, then final hash from commitment + value)')
+  .option('--contract <address>', 'Contract address (required for siloed hash computation)')
+  .option('--note-nonce <nonce>', 'Note nonce (required for unique hash computation)')
   .action(async (options) => {
     try {
-      const artifact = parseJsonOrFile(options.artifact);
-      const noteContent = parseJsonOrFile(options.noteContent);
+      const params: any = {};
       
-      const params: any = {
-        artifact,
-        noteContent,
-        storageSlot: options.storageSlot,
-      };
-      
-      if (options.noteTypeName) {
-        params.noteTypeName = options.noteTypeName;
+      // Determine which hash to start from
+      if (options.siloedNoteHash) {
+        // Start from siloed hash
+        if (!options.contract) {
+          throw new Error('--contract is required when using --siloed-note-hash');
+        }
+        params.siloedNoteHash = options.siloedNoteHash;
+        params.contractAddress = options.contract;
+      } else if (options.rawNoteHash) {
+        // Start from raw hash
+        params.rawNoteHash = options.rawNoteHash;
+        if (options.contract) {
+          params.contractAddress = options.contract;
+        }
+      } else {
+        // Compute from items
+        if (!options.noteItems) {
+          throw new Error('--note-items is required when not using --raw-note-hash or --siloed-note-hash');
+        }
+        if (!options.storageSlot) {
+          throw new Error('--storage-slot is required when computing from note items');
+        }
+        
+        let noteItems: string[];
+        
+        // Check if it's a file reference
+        if (options.noteItems.startsWith('@')) {
+          const parsed = parseJsonOrFile(options.noteItems);
+          if (!Array.isArray(parsed)) {
+            throw new Error('note-items file must contain a JSON array');
+          }
+          noteItems = parsed;
+        } else if (options.noteItems.trim().startsWith('[')) {
+          // Try parsing as JSON array
+          const parsed = JSON.parse(options.noteItems);
+          if (!Array.isArray(parsed)) {
+            throw new Error('note-items must be a JSON array or comma-separated values');
+          }
+          noteItems = parsed;
+        } else {
+          // Parse as comma-separated values
+          noteItems = options.noteItems.split(',').map((item: string) => item.trim()).filter((item: string) => item.length > 0);
+        }
+        
+        params.noteItems = noteItems;
+        params.storageSlot = options.storageSlot;
+        
+        if (options.partial) {
+          params.partial = true;
+        }
       }
       
-      const result = await AztecUtilities.computeNoteHashFromContent(JSON.stringify(params));
-      outputResult(result, program.opts().json);
+      // Add contract if provided (needed for siloed/unique computation)
+      if (options.contract && !params.contractAddress) {
+        params.contractAddress = options.contract;
+      }
+      
+      // Add nonce if provided
+      if (options.noteNonce) {
+        if (!params.contractAddress && !params.siloedNoteHash) {
+          throw new Error('--contract is required when using --note-nonce');
+        }
+        params.noteNonce = options.noteNonce;
+      }
+      
+      const result = await AztecUtilities.computeNoteHash(JSON.stringify(params));
+      
+      // If result is an object (multiple hashes), always output as JSON
+      if (typeof result === 'object') {
+        console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
+      } else {
+        outputResult(result, program.opts().json);
+      }
     } catch (error: any) {
       console.error(`Error computing note hash: ${error.message}`);
       process.exit(1);

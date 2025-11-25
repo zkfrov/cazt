@@ -1241,7 +1241,155 @@ export class AztecUtilities {
   }
 
   /**
-   * Compute note hash from note content
+   * Compute note hash(es) from note items and storage slot, or from existing hashes
+   * Progressively computes raw, siloed, and unique hashes based on provided inputs
+   * @param params JSON string with: { rawNoteHash?: string, siloedNoteHash?: string, noteItems?: string[], storageSlot?: string, partial?: boolean, contractAddress?: string, noteNonce?: string }
+   * @returns Promise<string | object> - raw hash (string) if only items+slot, or object with all computed hashes
+   */
+  static async computeNoteHash(params: string): Promise<string | any> {
+    const p = JSON.parse(params);
+    const rawNoteHashInput = p.rawNoteHash;
+    const siloedNoteHashInput = p.siloedNoteHash;
+    const noteItems = p.noteItems;
+    const storageSlot = p.storageSlot;
+    const partial = p.partial || false;
+    const contractAddress = p.contractAddress;
+    const noteNonce = p.noteNonce;
+
+    let rawNoteHash: Fr | undefined;
+    let rawNoteHashStr: string | undefined;
+    let siloedNoteHash: Fr | undefined;
+    let siloedNoteHashStr: string | undefined;
+
+    // Determine starting point
+    if (siloedNoteHashInput) {
+      // Start from siloed hash
+      if (!contractAddress) {
+        throw new Error('contractAddress is required when using siloedNoteHash');
+      }
+      siloedNoteHash = this.stringToFr(siloedNoteHashInput);
+      siloedNoteHashStr = siloedNoteHashInput;
+    } else if (rawNoteHashInput) {
+      // Start from raw hash
+      rawNoteHash = this.stringToFr(rawNoteHashInput);
+      rawNoteHashStr = rawNoteHashInput;
+    } else {
+      // Compute from items
+      if (!noteItems || !Array.isArray(noteItems)) {
+        throw new Error('noteItems must be a JSON array when not using rawNoteHash or siloedNoteHash');
+      }
+      if (storageSlot === undefined || storageSlot === null) {
+        throw new Error('storageSlot is required when computing from note items');
+      }
+
+      // Convert storage slot to Fr
+      const storageSlotFr = this.stringToFr(storageSlot);
+
+      if (partial) {
+      // For partial notes, compute hash in 2 steps:
+      // Step 1: commitment = hash([privateFields..., storageSlot], NOTE_HASH)
+      // Step 2: final = hash([commitment, lastItem], NOTE_HASH)
+      // The last item in noteItems is used for the second hash
+      
+      if (noteItems.length < 2) {
+        throw new Error('partial note requires at least 2 note items (last item is used for the second hash)');
+      }
+
+      // Split: private items (all except last) and public value (last item)
+      const privateItems = noteItems.slice(0, -1); // All except last
+      const value = noteItems[noteItems.length - 1]; // Last item is used for the second hash
+
+      // Convert to Fr[]
+      const privateItemsFr = privateItems.map((item: string) => this.stringToFr(item));
+      const valueFr = this.stringToFr(value);
+
+      // Step 1: Compute partial commitment from private content + storage slot
+      const commitmentInputs = [...privateItemsFr, storageSlotFr];
+      const commitment = await poseidon2HashWithSeparator(
+        commitmentInputs,
+        GeneratorIndex.NOTE_HASH
+      );
+
+      // Step 2: Compute final note hash from commitment + value
+      const finalInputs = [commitment, valueFr];
+      rawNoteHash = await poseidon2HashWithSeparator(
+        finalInputs,
+        GeneratorIndex.NOTE_HASH
+      );
+      rawNoteHashStr = rawNoteHash.toString();
+    } else {
+      // Regular note: single step hash
+      // Convert note items to Fr[]
+      const noteItemsFr = noteItems.map((item: string) => this.stringToFr(item));
+      
+      // 1. Compute raw note hash: poseidon2HashWithSeparator([...note.items, storageSlot], GeneratorIndex.NOTE_HASH)
+      const rawNoteHashInputs = [...noteItemsFr, storageSlotFr];
+      rawNoteHash = await poseidon2HashWithSeparator(
+        rawNoteHashInputs,
+        GeneratorIndex.NOTE_HASH
+      );
+      rawNoteHashStr = rawNoteHash.toString();
+      }
+    }
+
+    // 2. Compute siloed note hash if not already provided and contract is available
+    if (!siloedNoteHash && contractAddress && rawNoteHash) {
+      // Convert contract address string to Fr
+      const normalizedContract = this.normalizeAddress(contractAddress);
+      const contractAddr = AztecAddress.fromString(normalizedContract);
+      const contractAddrFr = contractAddr.toField();
+      
+      const siloedInputs = [contractAddrFr, rawNoteHash];
+      siloedNoteHash = await poseidon2HashWithSeparator(
+        siloedInputs,
+        GeneratorIndex.SILOED_NOTE_HASH
+      );
+      siloedNoteHashStr = siloedNoteHash.toString();
+    }
+
+    // If only raw hash and no contract/nonce, return just the raw hash
+    if (rawNoteHashStr && !siloedNoteHashStr && !noteNonce) {
+      return rawNoteHashStr;
+    }
+
+    // 3. Compute unique note hash: poseidon2HashWithSeparator([noteNonce, siloedNoteHash], GeneratorIndex.UNIQUE_NOTE_HASH)
+    let uniqueNoteHash: Fr | undefined;
+    let uniqueNoteHashStr: string | undefined;
+
+    if (noteNonce) {
+      if (!siloedNoteHash) {
+        throw new Error('siloedNoteHash is required when computing unique hash (provide --contract to compute siloed hash, or --siloed-note-hash)');
+      }
+      const noteNonceFr = this.stringToFr(noteNonce);
+      
+      const uniqueInputs = [noteNonceFr, siloedNoteHash];
+      uniqueNoteHash = await poseidon2HashWithSeparator(
+        uniqueInputs,
+        GeneratorIndex.UNIQUE_NOTE_HASH
+      );
+      uniqueNoteHashStr = uniqueNoteHash.toString();
+    }
+
+    // Return object with all computed hashes
+    const result: any = {};
+
+    if (rawNoteHashStr) {
+      result.rawNoteHash = rawNoteHashStr;
+    }
+
+    if (siloedNoteHashStr) {
+      result.siloedNoteHash = siloedNoteHashStr;
+    }
+
+    if (uniqueNoteHashStr) {
+      result.uniqueNoteHash = uniqueNoteHashStr;
+    }
+
+    return result;
+  }
+
+  /**
+   * Compute note hash from note content (legacy method, kept for verify command fallback)
    * @param params JSON string with: { artifact, noteContent, storageSlot }
    * @returns Promise<string> - the computed note hash
    */
