@@ -36,6 +36,131 @@ function resolveRpcUrl(url: string | undefined): string {
 
 const program = new Command();
 
+// ANSI escape codes for formatting
+const bold = '\x1b[1m';
+const reset = '\x1b[0m';
+const underline = '\x1b[4m';
+
+// Customize help output to show bold command names and aliases in descriptions
+program.configureHelp({
+  formatHelp: (cmd: any, helper: any) => {
+    const termWidth = process.stdout.columns || 80;
+    const helpWidth = Math.min(termWidth, 80);
+    const indent = 2;
+    
+    let output: string[] = [];
+    
+    // Usage
+    output.push(`${bold}${underline}Usage:${reset} ${helper.commandUsage(cmd)}`);
+    output.push('');
+    
+    // Description
+    if (cmd.description()) {
+      output.push(helper.commandDescription(cmd));
+      output.push('');
+    }
+    
+    // Commands
+    const commands = helper.visibleCommands(cmd);
+    if (commands.length > 0) {
+      output.push(`${bold}${underline}Commands:${reset}`);
+      output.push('');
+      
+      // Commands that should have a line break after them (based on z file structure)
+      const lineBreakAfter = new Set([
+        'storage-layout',
+        'admin',
+        'silo-nullifier',
+        'l2-to-l1-message-hash',
+        'address-from-number',
+        'note-selector',
+        'decode-function-signature',
+        'field-equals',
+        'buffer-as-fields',
+        'is-bounded-vec-struct',
+        'contract-artifact-from-buffer',
+        'eth-address-is-zero',
+        'compute-initialization-hash'
+      ]);
+      
+      for (let i = 0; i < commands.length; i++) {
+        const subcommand = commands[i];
+        const name = subcommand.name();
+        const aliases = subcommand.aliases();
+        let desc = subcommand.description();
+        
+        // Add aliases to description
+        if (aliases.length > 0) {
+          const aliasList = aliases.map((a: string) => a).join(', ');
+          desc = desc ? `${desc} [aliases: ${aliasList}]` : `[aliases: ${aliasList}]`;
+        }
+        
+        const nameWidth = 35; // Increased from 30 to add 5 more spaces
+        const paddedName = name.padEnd(nameWidth);
+        const wrappedDesc = helper.wrap(desc, helpWidth - indent - nameWidth, indent + nameWidth);
+        const descLines = wrappedDesc.split('\n');
+        
+        output.push(`  ${bold}${paddedName}${reset}${descLines[0]}`);
+        for (let j = 1; j < descLines.length; j++) {
+          output.push(' '.repeat(indent + nameWidth) + descLines[j]);
+        }
+        
+        // Add line break after this command if it's in the set
+        if (lineBreakAfter.has(name)) {
+          output.push('');
+        }
+      }
+      output.push('');
+    }
+    
+    // Options
+    const options = helper.visibleOptions(cmd);
+    if (options.length > 0) {
+      output.push(`${bold}${underline}Options:${reset}`);
+      output.push('');
+      
+      for (const option of options) {
+        const flags = option.flags || option.long || '';
+        const desc = option.description || '';
+        const nameWidth = 30;
+        const paddedFlags = flags.padEnd(nameWidth);
+        const wrappedDesc = helper.wrap(desc, helpWidth - indent - nameWidth, indent + nameWidth);
+        const descLines = wrappedDesc.split('\n');
+        
+        output.push(`  ${bold}${paddedFlags}${reset}${descLines[0]}`);
+        for (let i = 1; i < descLines.length; i++) {
+          output.push(' '.repeat(indent + nameWidth) + descLines[i]);
+        }
+      }
+      output.push('');
+    }
+    
+    // Arguments
+    const args = helper.visibleArguments(cmd);
+    if (args.length > 0) {
+      output.push(`${bold}${underline}Arguments:${reset}`);
+      output.push('');
+      
+      for (const arg of args) {
+        const name = arg.name();
+        const desc = arg.description || '';
+        const nameWidth = 30;
+        const paddedName = name.padEnd(nameWidth);
+        const wrappedDesc = helper.wrap(desc, helpWidth - indent - nameWidth, indent + nameWidth);
+        const descLines = wrappedDesc.split('\n');
+        
+        output.push(`  ${bold}${paddedName}${reset}${descLines[0]}`);
+        for (let i = 1; i < descLines.length; i++) {
+          output.push(' '.repeat(indent + nameWidth) + descLines[i]);
+        }
+      }
+      output.push('');
+    }
+    
+    return output.join('\n');
+  }
+});
+
 program
   .name('cazt')
   .description('cast-like CLI for Aztec Node JSON-RPC')
@@ -763,12 +888,7 @@ function outputResult(value: string | any, json: boolean = false): void {
   }
 }
 
-// Utility commands (flat, like cast)
-program.command('address-zero').alias('az').description('Prints the zero address').action(async () => {
-  const result = AztecUtilities.addressZero();
-  outputResult(result, program.opts().json);
-});
-
+// Hash utilities
 program.command('hash-zero').alias('hz').description('Prints the zero hash').action(async () => {
   const result = '0x0000000000000000000000000000000000000000000000000000000000000000';
   outputResult(result, program.opts().json);
@@ -780,370 +900,414 @@ program.command('keccak').alias('k').description('Keccak-256 hash').argument('[d
   outputResult(`0x${result}`, program.opts().json);
 });
 
-program.command('sha256').description('SHA-256 hash (Aztec standard)').argument('[data]', 'The data to hash').action(async (data) => {
+program.command('sha256').alias('sha').description('SHA-256 hash (Aztec standard)').argument('[data]', 'The data to hash').action(async (data) => {
   const input = data || await readStdin();
   const result = await AztecUtilities.sha256(input);
   outputResult(result, program.opts().json);
 });
 
-program.command('poseidon2').description('Poseidon2 hash').argument('<fields>', 'JSON array of field values').action(async (fields: string) => {
-  const result = await AztecUtilities.poseidon2(fields);
+program.command('poseidon2').alias('p2').alias('poseidon').description('Poseidon2 hash').argument('<fields>', 'Comma-separated field values (e.g., "0x1,0x2,0x3") or JSON array').action(async (fields: string) => {
+  let fieldsArray: string[];
+  
+  // Check if it's a JSON array
+  if (fields.trim().startsWith('[')) {
+    // Try parsing as JSON array
+    const parsed = JSON.parse(fields);
+    if (!Array.isArray(parsed)) {
+      throw new Error('fields must be a JSON array or comma-separated values');
+    }
+    fieldsArray = parsed;
+  } else {
+    // Parse as comma-separated values
+    fieldsArray = fields.split(',').map((item: string) => item.trim()).filter((item: string) => item.length > 0);
+  }
+  
+  const result = await AztecUtilities.poseidon2(JSON.stringify(fieldsArray));
   outputResult(result, program.opts().json);
 });
 
-program.command('secret-hash').description('Compute secret hash').argument('<secret>', 'The secret value').action(async (secret: string) => {
+program.command('pedersen').alias('ped').description('Pedersen hash').argument('<fields>', 'Comma-separated field values (e.g., "0x1,0x2,0x3") or JSON array').option('--index <index>', 'Hash index (default: 0)', '0').action(async (fields: string, options) => {
+  let fieldsArray: string[];
+  
+  // Check if it's a JSON array
+  if (fields.trim().startsWith('[')) {
+    // Try parsing as JSON array
+    const parsed = JSON.parse(fields);
+    if (!Array.isArray(parsed)) {
+      throw new Error('fields must be a JSON array or comma-separated values');
+    }
+    fieldsArray = parsed;
+  } else {
+    // Parse as comma-separated values
+    fieldsArray = fields.split(',').map((item: string) => item.trim()).filter((item: string) => item.length > 0);
+  }
+  
+  const params = JSON.stringify({
+    inputs: fieldsArray,
+    index: parseInt(options.index) || 0,
+  });
+  
+  const result = await AztecUtilities.computePedersenHash(params);
+  outputResult(result, program.opts().json);
+});
+
+program.command('secret-hash').alias('sh').description('Compute secret hash').argument('<secret>', 'The secret value').action(async (secret: string) => {
   const result = await AztecUtilities.secretHash(secret);
   outputResult(result, program.opts().json);
 });
 
-program.command('silo-nullifier').description('Silo a nullifier with contract address').requiredOption('--contract <contract>', 'Contract address').requiredOption('--nullifier <nullifier>', 'Nullifier value').action(async (options) => {
+program.command('silo-nullifier').alias('sn').description('Silo a nullifier with contract address').requiredOption('--contract <contract>', 'Contract address').requiredOption('--nullifier <nullifier>', 'Nullifier value').action(async (options) => {
   const result = await AztecUtilities.siloNullifier(options.contract, options.nullifier);
   outputResult(result, program.opts().json);
 });
 
-program.command('public-data-slot').description('Compute public data tree leaf slot').requiredOption('--contract <contract>', 'Contract address').requiredOption('--slot <slot>', 'Storage slot').action(async (options) => {
-  const result = await AztecUtilities.publicDataSlot(options.contract, options.slot);
-  outputResult(result, program.opts().json);
-});
-
-program.command('address-validate').description('Validate Aztec address format').argument('<address>', 'Address to validate').action(async (address: string) => {
-  const result = AztecUtilities.addressValidate(address);
-  // This returns an object, so always output as JSON
-  console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
-});
-
+// Selector and signature utilities
 program.command('sig').alias('selector').alias('si').description('Compute function selector from signature').argument('[sig]', 'Function signature').action(async (sig) => {
   const input = sig || await readStdin();
   const result = await AztecUtilities.selectorFromSignature(input);
   outputResult(result, program.opts().json);
 });
 
-program.command('field-from-string').description('Convert string to field element').argument('<value>', 'String value to convert').action(async (value: string) => {
+program.command('field-from-string').alias('ffs').description('Convert string to field element').argument('<value>', 'String value to convert').action(async (value: string) => {
   const result = AztecUtilities.fieldFromString(value);
   outputResult(result, program.opts().json);
 });
 
-program.command('field-to-string').description('Convert field element to string').argument('<field>', 'Field value to convert').action(async (field: string) => {
+program.command('field-to-string').alias('fts').description('Convert field element to string').argument('<field>', 'Field value to convert').action(async (field: string) => {
   const result = AztecUtilities.fieldToString(field);
   outputResult(result, program.opts().json);
 });
 
-// Additional hash utilities
-program.command('hash-vk').description('Hash verification key').argument('<fields>', 'JSON array of field values').action(async (fields: string) => {
+program.command('hash-vk').alias('vk').description('Hash verification key').argument('<fields>', 'JSON array of field values').action(async (fields: string) => {
   const result = await AztecUtilities.hashVK(fields);
   outputResult(result, program.opts().json);
 });
 
-program.command('note-hash-nonce').description('Compute note hash nonce').requiredOption('--nullifier-zero <nullifierZero>', 'Nullifier zero').requiredOption('--index <index>', 'Note hash index').action(async (options) => {
+program.command('note-hash-nonce').alias('nhn').description('Compute note hash nonce').requiredOption('--nullifier-zero <nullifierZero>', 'Nullifier zero').requiredOption('--index <index>', 'Note hash index').action(async (options) => {
   const result = await AztecUtilities.noteHashNonce(options.nullifierZero, parseInt(options.index));
   outputResult(result, program.opts().json);
 });
 
-program.command('silo-note-hash').description('Silo note hash to contract').requiredOption('--contract <contract>', 'Contract address').requiredOption('--note-hash <noteHash>', 'Note hash').action(async (options) => {
+program.command('silo-note-hash').alias('snh').description('Silo note hash to contract').requiredOption('--contract <contract>', 'Contract address').requiredOption('--note-hash <noteHash>', 'Note hash').action(async (options) => {
   const result = await AztecUtilities.siloNoteHash(options.contract, options.noteHash);
   outputResult(result, program.opts().json);
 });
 
-program.command('unique-note-hash').description('Compute unique note hash').requiredOption('--nonce <nonce>', 'Note nonce').requiredOption('--siloed-note-hash <siloedNoteHash>', 'Siloed note hash').action(async (options) => {
+program.command('unique-note-hash').alias('unh').description('Compute unique note hash').requiredOption('--nonce <nonce>', 'Note nonce').requiredOption('--siloed-note-hash <siloedNoteHash>', 'Siloed note hash').action(async (options) => {
   const result = await AztecUtilities.uniqueNoteHash(options.nonce, options.siloedNoteHash);
   outputResult(result, program.opts().json);
 });
 
-program.command('silo-private-log').description('Silo private log tag').requiredOption('--contract <contract>', 'Contract address').requiredOption('--tag <tag>', 'Unsiloed tag').action(async (options) => {
+program.command('silo-private-log').alias('spl').description('Silo private log tag').requiredOption('--contract <contract>', 'Contract address').requiredOption('--tag <tag>', 'Unsiloed tag').action(async (options) => {
   const result = await AztecUtilities.siloPrivateLog(options.contract, options.tag);
   outputResult(result, program.opts().json);
 });
 
-program.command('var-args-hash').description('Hash function arguments (for authwit)').argument('<fields>', 'JSON array of field values').action(async (fields: string) => {
+program.command('var-args-hash').alias('vah').description('Hash function arguments (for authwit)').argument('<fields>', 'JSON array of field values').action(async (fields: string) => {
   const result = await AztecUtilities.varArgsHash(fields);
   outputResult(result, program.opts().json);
 });
 
-program.command('calldata-hash').description('Hash public function calldata').argument('<calldata>', 'JSON array of calldata fields').action(async (calldata: string) => {
+program.command('calldata-hash').alias('cdh').description('Hash public function calldata').argument('<calldata>', 'JSON array of calldata fields').action(async (calldata: string) => {
   const result = await AztecUtilities.calldataHash(calldata);
   outputResult(result, program.opts().json);
 });
 
-program.command('l1-to-l2-message-nullifier').description('Compute L1->L2 message nullifier').requiredOption('--contract <contract>', 'Contract address').requiredOption('--message-hash <messageHash>', 'Message hash').requiredOption('--secret <secret>', 'Secret').action(async (options) => {
+program.command('l1-to-l2-message-nullifier').alias('l1l2n').description('Compute L1->L2 message nullifier').requiredOption('--contract <contract>', 'Contract address').requiredOption('--message-hash <messageHash>', 'Message hash').requiredOption('--secret <secret>', 'Secret').action(async (options) => {
   const result = await AztecUtilities.l1ToL2MessageNullifier(options.contract, options.messageHash, options.secret);
   outputResult(result, program.opts().json);
 });
 
-program.command('l2-to-l1-message-hash').description('Compute L2->L1 message hash').argument('<params>', 'JSON object with l2Sender, l1Recipient, content, rollupVersion, chainId').action(async (params: string) => {
+program.command('l2-to-l1-message-hash').alias('l2l1h').description('Compute L2->L1 message hash').argument('<params>', 'JSON object with l2Sender, l1Recipient, content, rollupVersion, chainId').action(async (params: string) => {
   const result = await AztecUtilities.l2ToL1MessageHash(params);
   outputResult(result, program.opts().json);
 });
 
-// Additional address utilities
-program.command('address-random').description('Generate random valid Aztec address').action(async () => {
+// Address utilities
+program.command('address-zero').alias('az').description('Prints the zero address').action(async () => {
+  const result = AztecUtilities.addressZero();
+  outputResult(result, program.opts().json);
+});
+
+program.command('address-validate').alias('av').description('Validate Aztec address format').argument('<address>', 'Address to validate').action(async (address: string) => {
+  const result = AztecUtilities.addressValidate(address);
+  // This returns an object, so always output as JSON
+  console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
+});
+
+program.command('public-data-slot').alias('pds').description('Compute public data tree leaf slot').requiredOption('--contract <contract>', 'Contract address').requiredOption('--slot <slot>', 'Storage slot').action(async (options) => {
+  const result = await AztecUtilities.publicDataSlot(options.contract, options.slot);
+  outputResult(result, program.opts().json);
+});
+
+program.command('address-random').alias('ar').description('Generate random valid Aztec address').action(async () => {
   const result = await AztecUtilities.addressRandom();
   outputResult(result, program.opts().json);
 });
 
-program.command('address-is-valid').description('Check if address is valid').argument('<address>', 'Address to check').action(async (address: string) => {
+program.command('address-is-valid').alias('aiv').description('Check if address is valid').argument('<address>', 'Address to check').action(async (address: string) => {
   const result = await AztecUtilities.addressIsValid(address);
   // Boolean output - output as true/false string
   outputResult(result.toString(), program.opts().json);
 });
 
-program.command('address-to-point').description('Convert address to Grumpkin point').argument('<address>', 'Address to convert').action(async (address: string) => {
+program.command('address-to-point').alias('atp').description('Convert address to Grumpkin point').argument('<address>', 'Address to convert').action(async (address: string) => {
   const result = await AztecUtilities.addressToPoint(address);
   // Object output - always JSON
   console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
 });
 
-program.command('address-from-field').description('Create address from field').argument('<field>', 'Field value').action(async (field: string) => {
+program.command('address-from-field').alias('aff').description('Create address from field').argument('<field>', 'Field value').action(async (field: string) => {
   const result = AztecUtilities.addressFromField(field);
   outputResult(result, program.opts().json);
 });
 
-program.command('address-from-bigint').description('Create address from bigint').argument('<value>', 'BigInt value').action(async (value: string) => {
+program.command('address-from-bigint').alias('afb').description('Create address from bigint').argument('<value>', 'BigInt value').action(async (value: string) => {
   const result = AztecUtilities.addressFromBigInt(value);
   outputResult(result, program.opts().json);
 });
 
-program.command('address-from-number').description('Create address from number').argument('<value>', 'Number value').action(async (value: string) => {
+program.command('address-from-number').alias('afn').description('Create address from number').argument('<value>', 'Number value').action(async (value: string) => {
   const result = AztecUtilities.addressFromNumber(parseInt(value));
   outputResult(result, program.opts().json);
 });
 
-// Additional selector utilities
-program.command('selector-from-name-params').description('Create selector from function name and parameters').argument('<params>', 'JSON object with name and parameters').action(async (params: string) => {
+// Selector utilities
+program.command('selector-from-name-params').alias('sfnp').description('Create selector from function name and parameters').argument('<params>', 'JSON object with name and parameters').action(async (params: string) => {
   const result = await AztecUtilities.selectorFromNameParams(params);
   outputResult(result, program.opts().json);
 });
 
-program.command('selector-from-field').description('Create selector from field').argument('<field>', 'Field value').action(async (field: string) => {
+program.command('selector-from-field').alias('sff').description('Create selector from field').argument('<field>', 'Field value').action(async (field: string) => {
   const result = AztecUtilities.selectorFromField(field);
   outputResult(result, program.opts().json);
 });
 
-program.command('selector-from-string').description('Create selector from hex string').argument('<hex>', 'Hex string').action(async (hex: string) => {
+program.command('selector-from-string').alias('sfs').description('Create selector from hex string').argument('<hex>', 'Hex string').action(async (hex: string) => {
   const result = AztecUtilities.selectorFromString(hex);
   outputResult(result, program.opts().json);
 });
 
-program.command('selector-empty').description('Get empty selector').action(async () => {
+program.command('selector-empty').alias('se').description('Get empty selector').action(async () => {
   const result = AztecUtilities.selectorEmpty();
   outputResult(result, program.opts().json);
 });
 
-program.command('event-selector').description('Compute event selector').argument('<sig>', 'Event signature').action(async (sig: string) => {
+program.command('event-selector').alias('es').description('Compute event selector').argument('<sig>', 'Event signature').action(async (sig: string) => {
   const result = await AztecUtilities.eventSelector(sig);
   outputResult(result, program.opts().json);
 });
 
-program.command('note-selector').description('Compute note selector').argument('<sig>', 'Note signature').action(async (sig: string) => {
+program.command('note-selector').alias('ns').description('Compute note selector').argument('<sig>', 'Note signature').action(async (sig: string) => {
   const result = await AztecUtilities.noteSelector(sig);
   outputResult(result, program.opts().json);
 });
 
 // ABI encoding/decoding
-program.command('abi-encode').description('ABI encode function arguments').argument('<params>', 'JSON object with abi and args').action(async (params: string) => {
+program.command('abi-encode').alias('ae').description('ABI encode function arguments').argument('<params>', 'JSON object with abi and args').action(async (params: string) => {
   const result = AztecUtilities.abiEncode(params);
   // Array output - always JSON
   console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
 });
 
-program.command('abi-decode').description('ABI decode fields').argument('<params>', 'JSON object with types and fields').action(async (params: string) => {
+program.command('abi-decode').alias('ad').description('ABI decode fields').argument('<params>', 'JSON object with types and fields').action(async (params: string) => {
   const result = AztecUtilities.abiDecode(params);
   // Decoded output - always JSON
   console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
 });
 
-program.command('decode-function-signature').description('Decode function signature').argument('<params>', 'JSON object with name and parameters').action(async (params: string) => {
+program.command('decode-function-signature').alias('dfs').description('Decode function signature').argument('<params>', 'JSON object with name and parameters').action(async (params: string) => {
   const result = AztecUtilities.decodeFunctionSignature(params);
   outputResult(result, program.opts().json);
 });
 
-// Additional field utilities
-program.command('field-random').description('Generate random field element').action(async () => {
+// Field utilities
+program.command('field-random').alias('fr').description('Generate random field element').action(async () => {
   const result = AztecUtilities.fieldRandom();
   outputResult(result, program.opts().json);
 });
 
-program.command('field-from-buffer').description('Create field from buffer').argument('<buffer>', 'Hex buffer').action(async (buffer: string) => {
+program.command('field-from-buffer').alias('ffb').description('Create field from buffer').argument('<buffer>', 'Hex buffer').action(async (buffer: string) => {
   const result = AztecUtilities.fieldFromBuffer(buffer);
   outputResult(result, program.opts().json);
 });
 
-program.command('field-to-buffer').description('Convert field to buffer').argument('<field>', 'Field value').action(async (field: string) => {
+program.command('field-to-buffer').alias('ftb').description('Convert field to buffer').argument('<field>', 'Field value').action(async (field: string) => {
   const result = AztecUtilities.fieldToBuffer(field);
   outputResult(result, program.opts().json);
 });
 
-program.command('field-from-bigint').description('Create field from bigint').argument('<value>', 'BigInt value').action(async (value: string) => {
+program.command('field-from-bigint').alias('ffbi').description('Create field from bigint').argument('<value>', 'BigInt value').action(async (value: string) => {
   const result = AztecUtilities.fieldFromBigInt(value);
   outputResult(result, program.opts().json);
 });
 
-program.command('field-to-bigint').description('Convert field to bigint').argument('<field>', 'Field value').action(async (field: string) => {
+program.command('field-to-bigint').alias('ftbi').description('Convert field to bigint').argument('<field>', 'Field value').action(async (field: string) => {
   const result = AztecUtilities.fieldToBigInt(field);
   outputResult(result, program.opts().json);
 });
 
-program.command('field-is-zero').description('Check if field is zero').argument('<field>', 'Field value').action(async (field: string) => {
+program.command('field-is-zero').alias('fiz').description('Check if field is zero').argument('<field>', 'Field value').action(async (field: string) => {
   const result = AztecUtilities.fieldIsZero(field);
   outputResult(result.toString(), program.opts().json);
 });
 
-program.command('field-equals').description('Compare two fields').argument('<field1>', 'First field').argument('<field2>', 'Second field').action(async (field1: string, field2: string) => {
+program.command('field-equals').alias('fe').description('Compare two fields').argument('<field1>', 'First field').argument('<field2>', 'Second field').action(async (field1: string, field2: string) => {
   const result = AztecUtilities.fieldEquals(field1, field2);
   outputResult(result.toString(), program.opts().json);
 });
 
-// Contract artifact utilities
-program.command('artifact-hash').description('Compute artifact hash').argument('<artifact>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (artifact: string) => {
+// Artifact utilities
+program.command('artifact-hash').alias('ah').description('Compute artifact hash').argument('<artifact>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (artifact: string) => {
   const artifactObj = parseJsonOrFile(artifact);
   const result = await AztecUtilities.artifactHash(JSON.stringify(artifactObj));
   outputResult(result, program.opts().json);
 });
 
-program.command('artifact-hash-preimage').description('Compute artifact hash preimage').argument('<artifact>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (artifact: string) => {
+program.command('artifact-hash-preimage').alias('ahp').description('Compute artifact hash preimage').argument('<artifact>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (artifact: string) => {
   const artifactObj = parseJsonOrFile(artifact);
   const result = await AztecUtilities.artifactHashPreimage(JSON.stringify(artifactObj));
   // Object output - always JSON
   console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
 });
 
-program.command('artifact-metadata-hash').description('Compute artifact metadata hash').argument('<artifact>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (artifact: string) => {
+program.command('artifact-metadata-hash').alias('amh').description('Compute artifact metadata hash').argument('<artifact>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (artifact: string) => {
   const artifactObj = parseJsonOrFile(artifact);
   const result = AztecUtilities.artifactMetadataHash(JSON.stringify(artifactObj));
   outputResult(result, program.opts().json);
 });
 
-program.command('function-artifact-hash').description('Compute function artifact hash').argument('<function>', 'Function artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (function_: string) => {
+program.command('function-artifact-hash').alias('fah').description('Compute function artifact hash').argument('<function>', 'Function artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (function_: string) => {
   const functionObj = parseJsonOrFile(function_);
   const result = await AztecUtilities.functionArtifactHash(JSON.stringify(functionObj));
   outputResult(result, program.opts().json);
 });
 
-program.command('function-metadata-hash').description('Compute function metadata hash').argument('<function>', 'Function artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (function_: string) => {
+program.command('function-metadata-hash').alias('fmh').description('Compute function metadata hash').argument('<function>', 'Function artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (function_: string) => {
   const functionObj = parseJsonOrFile(function_);
   const result = AztecUtilities.functionMetadataHash(JSON.stringify(functionObj));
   outputResult(result, program.opts().json);
 });
 
-// Buffer utilities
-program.command('buffer-as-fields').description('Convert buffer to fields').argument('<params>', 'JSON object with buffer (hex) and targetLength').action(async (params: string) => {
+program.command('buffer-as-fields').alias('baf').description('Convert buffer to fields').argument('<params>', 'JSON object with buffer (hex) and targetLength').action(async (params: string) => {
   const result = AztecUtilities.bufferAsFields(params);
   // Array output - always JSON
   console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
 });
 
 // ABI type utilities
-program.command('is-address-struct').description('Check if ABI type is address struct').argument('<abi_type>', 'ABI type JSON').action(async (abiType: string) => {
+program.command('is-address-struct').alias('ias').description('Check if ABI type is address struct').argument('<abi_type>', 'ABI type JSON').action(async (abiType: string) => {
   const result = AztecUtilities.isAddressStruct(abiType);
   outputResult(result.toString(), program.opts().json);
 });
 
-program.command('is-eth-address-struct').description('Check if ABI type is ETH address struct').argument('<abi_type>', 'ABI type JSON').action(async (abiType: string) => {
+program.command('is-eth-address-struct').alias('ieas').description('Check if ABI type is ETH address struct').argument('<abi_type>', 'ABI type JSON').action(async (abiType: string) => {
   const result = AztecUtilities.isEthAddressStruct(abiType);
   outputResult(result.toString(), program.opts().json);
 });
 
-program.command('is-aztec-address-struct').description('Check if ABI type is Aztec address struct').argument('<abi_type>', 'ABI type JSON').action(async (abiType: string) => {
+program.command('is-aztec-address-struct').alias('iaas').description('Check if ABI type is Aztec address struct').argument('<abi_type>', 'ABI type JSON').action(async (abiType: string) => {
   const result = AztecUtilities.isAztecAddressStruct(abiType);
   outputResult(result.toString(), program.opts().json);
 });
 
-program.command('is-function-selector-struct').description('Check if ABI type is function selector struct').argument('<abi_type>', 'ABI type JSON').action(async (abiType: string) => {
+program.command('is-function-selector-struct').alias('ifss').description('Check if ABI type is function selector struct').argument('<abi_type>', 'ABI type JSON').action(async (abiType: string) => {
   const result = AztecUtilities.isFunctionSelectorStruct(abiType);
   outputResult(result.toString(), program.opts().json);
 });
 
-program.command('is-wrapped-field-struct').description('Check if ABI type is wrapped field struct').argument('<abi_type>', 'ABI type JSON').action(async (abiType: string) => {
+program.command('is-wrapped-field-struct').alias('iwfs').description('Check if ABI type is wrapped field struct').argument('<abi_type>', 'ABI type JSON').action(async (abiType: string) => {
   const result = AztecUtilities.isWrappedFieldStruct(abiType);
   outputResult(result.toString(), program.opts().json);
 });
 
-program.command('is-bounded-vec-struct').description('Check if ABI type is bounded vec struct').argument('<abi_type>', 'ABI type JSON').action(async (abiType: string) => {
+program.command('is-bounded-vec-struct').alias('ibvs').description('Check if ABI type is bounded vec struct').argument('<abi_type>', 'ABI type JSON').action(async (abiType: string) => {
   const result = AztecUtilities.isBoundedVecStruct(abiType);
   outputResult(result.toString(), program.opts().json);
 });
 
 // Contract artifact loading
-program.command('load-contract-artifact').description('Load contract artifact from Noir compiled contract').argument('<noir_contract>', 'Noir compiled contract JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (noirContract: string) => {
+program.command('load-contract-artifact').alias('lca').description('Load contract artifact from Noir compiled contract').argument('<noir_contract>', 'Noir compiled contract JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (noirContract: string) => {
   const contractObj = parseJsonOrFile(noirContract);
   const result = AztecUtilities.loadContractArtifact(JSON.stringify(contractObj));
   console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
 });
 
-program.command('load-contract-artifact-for-public').description('Load contract artifact for public functions').argument('<noir_contract>', 'Noir compiled contract JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (noirContract: string) => {
+program.command('load-contract-artifact-for-public').alias('lcafp').description('Load contract artifact for public functions').argument('<noir_contract>', 'Noir compiled contract JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (noirContract: string) => {
   const contractObj = parseJsonOrFile(noirContract);
   const result = AztecUtilities.loadContractArtifactForPublic(JSON.stringify(contractObj));
   console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
 });
 
-program.command('contract-artifact-to-buffer').description('Serialize contract artifact to buffer').argument('<artifact>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (artifact: string) => {
+program.command('contract-artifact-to-buffer').alias('catb').description('Serialize contract artifact to buffer').argument('<artifact>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string').action(async (artifact: string) => {
   const artifactObj = parseJsonOrFile(artifact);
   const result = AztecUtilities.contractArtifactToBuffer(JSON.stringify(artifactObj));
   outputResult(result, program.opts().json);
 });
 
-program.command('contract-artifact-from-buffer').description('Deserialize contract artifact from buffer').argument('<buffer>', 'Hex buffer').action(async (buffer: string) => {
+program.command('contract-artifact-from-buffer').alias('cafb').description('Deserialize contract artifact from buffer').argument('<buffer>', 'Hex buffer').action(async (buffer: string) => {
   const result = AztecUtilities.contractArtifactFromBuffer(buffer);
   console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
 });
 
 // EthAddress utilities
-program.command('eth-address-zero').description('Get zero Ethereum address').action(async () => {
+program.command('eth-address-zero').alias('eaz').description('Get zero Ethereum address').action(async () => {
   const result = AztecUtilities.ethAddressZero();
   outputResult(result, program.opts().json);
 });
 
-program.command('eth-address-random').description('Generate random Ethereum address').action(async () => {
+program.command('eth-address-random').alias('ear').description('Generate random Ethereum address').action(async () => {
   const result = await AztecUtilities.ethAddressRandom();
   outputResult(result, program.opts().json);
 });
 
-program.command('eth-address-validate').description('Validate Ethereum address format').argument('<address>', 'Address to validate').action(async (address: string) => {
+program.command('eth-address-validate').alias('eav').description('Validate Ethereum address format').argument('<address>', 'Address to validate').action(async (address: string) => {
   const result = AztecUtilities.ethAddressValidate(address);
   console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
 });
 
-program.command('eth-address-from-field').description('Create Ethereum address from field').argument('<field>', 'Field value').action(async (field: string) => {
+program.command('eth-address-from-field').alias('eaff').description('Create Ethereum address from field').argument('<field>', 'Field value').action(async (field: string) => {
   const result = AztecUtilities.ethAddressFromField(field);
   outputResult(result, program.opts().json);
 });
 
-program.command('eth-address-to-field').description('Convert Ethereum address to field').argument('<address>', 'Ethereum address').action(async (address: string) => {
+program.command('eth-address-to-field').alias('eatf').description('Convert Ethereum address to field').argument('<address>', 'Ethereum address').action(async (address: string) => {
   const result = AztecUtilities.ethAddressToField(address);
   outputResult(result, program.opts().json);
 });
 
-program.command('eth-address-is-zero').description('Check if Ethereum address is zero').argument('<address>', 'Ethereum address').action(async (address: string) => {
+program.command('eth-address-is-zero').alias('eaiz').description('Check if Ethereum address is zero').argument('<address>', 'Ethereum address').action(async (address: string) => {
   const result = AztecUtilities.ethAddressIsZero(address);
   outputResult(result.toString(), program.opts().json);
 });
 
 // Address computation utilities
-program.command('compute-contract-address').description('Compute contract address from instance').argument('<instance>', 'Contract instance JSON').action(async (instance: string) => {
+program.command('compute-contract-address').alias('cca').description('Compute contract address from instance').argument('<instance>', 'Contract instance JSON').action(async (instance: string) => {
   const result = await AztecUtilities.computeContractAddress(instance);
   outputResult(result, program.opts().json);
 });
 
-program.command('compute-partial-address').description('Compute partial address').argument('<instance>', 'Contract instance JSON').action(async (instance: string) => {
+program.command('compute-partial-address').alias('cpa').description('Compute partial address').argument('<instance>', 'Contract instance JSON').action(async (instance: string) => {
   const result = await AztecUtilities.computePartialAddress(instance);
   outputResult(result, program.opts().json);
 });
 
-program.command('compute-preaddress').description('Compute preaddress').argument('<params>', 'JSON object with publicKeysHash and partialAddress').action(async (params: string) => {
+program.command('compute-preaddress').alias('cpr').description('Compute preaddress').argument('<params>', 'JSON object with publicKeysHash and partialAddress').action(async (params: string) => {
   const result = await AztecUtilities.computePreaddress(params);
   outputResult(result, program.opts().json);
 });
 
-program.command('compute-address-from-keys').description('Compute address from public keys and partial address').argument('<params>', 'JSON object with publicKeys and partialAddress').action(async (params: string) => {
+program.command('compute-address-from-keys').alias('cafk').description('Compute address from public keys and partial address').argument('<params>', 'JSON object with publicKeys and partialAddress').action(async (params: string) => {
   const result = await AztecUtilities.computeAddressFromKeys(params);
   outputResult(result, program.opts().json);
 });
 
-program.command('compute-salted-initialization-hash').description('Compute salted initialization hash').argument('<params>', 'JSON object with initializationHash, salt, and deployer').action(async (params: string) => {
+program.command('compute-salted-initialization-hash').alias('csih').description('Compute salted initialization hash').argument('<params>', 'JSON object with initializationHash, salt, and deployer').action(async (params: string) => {
   const result = await AztecUtilities.computeSaltedInitializationHash(params);
   outputResult(result, program.opts().json);
 });
 
-program.command('compute-initialization-hash').description('Compute initialization hash').argument('<params>', 'JSON object with initFn (optional) and args').action(async (params: string) => {
+program.command('compute-initialization-hash').alias('cih').description('Compute initialization hash').argument('<params>', 'JSON object with initFn (optional) and args').action(async (params: string) => {
   const result = await AztecUtilities.computeInitializationHash(params);
   outputResult(result, program.opts().json);
 });

@@ -34,7 +34,7 @@ import {
   computeL2ToL1MessageHash,
   deriveStorageSlotInMap,
 } from '@aztec/stdlib/hash';
-import { keccak256, sha256ToField, poseidon2Hash, poseidon2HashWithSeparator } from '@aztec/foundation/crypto';
+import { keccak256, sha256ToField, poseidon2Hash, poseidon2HashWithSeparator, pedersenHash } from '@aztec/foundation/crypto';
 import { GeneratorIndex } from '@aztec/constants';
 import { EthAddress } from '@aztec/foundation/eth-address';
 import {
@@ -106,6 +106,40 @@ export class AztecUtilities {
     const frFields = fieldsArray.map((f: string) => this.stringToFr(f));
     const result = await poseidon2Hash(frFields);
     return result.toString();
+  }
+
+  /**
+   * Compute Pedersen hash from input fields
+   * @param params JSON string with: { inputs: string[], index?: number }
+   * @returns Promise<string> - the computed Pedersen hash
+   */
+  static async computePedersenHash(params: string): Promise<string> {
+    const p = JSON.parse(params);
+    const inputs = p.inputs;
+    const index = p.index || 0; // Optional hash index (default 0)
+
+    if (!inputs || !Array.isArray(inputs)) {
+      throw new Error('inputs must be a JSON array');
+    }
+
+    // Convert inputs to Fieldable[] (can be Fr, Buffer, string, etc.)
+    const inputFields = inputs.map((item: string) => {
+      // If it's a hex string, convert to Fr
+      if (typeof item === 'string' && item.startsWith('0x')) {
+        return this.stringToFr(item);
+      }
+      // If it's a number string, convert to Fr
+      if (typeof item === 'string' && /^\d+$/.test(item)) {
+        return new Fr(BigInt(item));
+      }
+      // Otherwise try to convert to Fr
+      return this.stringToFr(item);
+    });
+
+    // Compute Pedersen hash
+    const hash = await pedersenHash(inputFields, index);
+    
+    return hash.toString();
   }
 
   static async secretHash(secret: string): Promise<string> {
