@@ -48,6 +48,10 @@ export class RpcClient {
   }
 
   formatOutput(result: any, pretty: boolean): string {
+    // Handle null/undefined explicitly
+    if (result === null || result === undefined) {
+      return pretty ? 'null' : 'null';
+    }
     if (pretty) {
       return JSON.stringify(result, null, 2);
     }

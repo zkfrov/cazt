@@ -437,9 +437,9 @@ contractCmd.command('class').description('Get contract class').requiredOption('-
   const result = await client.call('node_getContractClass', [options.id]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
-contractCmd.command('get').description('Get contract').requiredOption('--address <address>', 'Contract address').action(async (options) => {
+contractCmd.command('get').description('Get contract').argument('<address>', 'Contract address').action(async (address) => {
   const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
-  const result = await client.call('node_getContract', [options.address]);
+  const result = await client.call('node_getContract', [address]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 
