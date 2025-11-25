@@ -4,15 +4,20 @@ import { Command } from 'commander';
 import { RpcClient, parseJsonOrFile } from './utils/rpc.js';
 import { AztecUtilities } from './utils/utilities.js';
 import * as readline from 'readline';
-import { readdirSync, existsSync } from 'fs';
-import { join, resolve } from 'path';
+import { readdirSync, existsSync, readFileSync } from 'fs';
+import { join, resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageJson = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf-8'));
 
 const program = new Command();
 
 program
   .name('cazt')
   .description('cast-like CLI for Aztec Node JSON-RPC')
-  .version('3.0.0-devnet.2')
+  .version(packageJson.version)
   .option('--rpc-url <url>', 'Aztec node RPC url', process.env.CAZT_RPC_URL || 'http://localhost:8080')
   .option('--admin-url <url>', 'Aztec admin RPC url', process.env.CAZT_ADMIN_URL || 'http://localhost:8880')
   .option('--no-pretty', 'Print compact JSON', false)
