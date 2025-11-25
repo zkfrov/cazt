@@ -12,13 +12,35 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const packageJson = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf-8'));
 
+// Network URL mappings
+const NETWORK_URLS: Record<string, string> = {
+  devnet: 'https://devnet.aztec-labs.com',
+  testnet: 'https://aztec-testnet-fullnode.zkv.xyz',
+};
+
+/**
+ * Resolve RPC URL - converts network shortcuts (devnet, testnet) to actual URLs
+ */
+function resolveRpcUrl(url: string | undefined): string {
+  if (!url) {
+    return process.env.CAZT_RPC_URL || 'http://localhost:8080';
+  }
+  // Check if it's a network shortcut
+  const lowerUrl = url.toLowerCase();
+  if (NETWORK_URLS[lowerUrl]) {
+    return NETWORK_URLS[lowerUrl];
+  }
+  // Otherwise return as-is
+  return url;
+}
+
 const program = new Command();
 
 program
   .name('cazt')
   .description('cast-like CLI for Aztec Node JSON-RPC')
   .version(packageJson.version)
-  .option('--rpc-url <url>', 'Aztec node RPC url', process.env.CAZT_RPC_URL || 'http://localhost:8080')
+  .option('--rpc-url <url>', 'Aztec node RPC url (or "devnet"/"testnet" for network shortcuts)', resolveRpcUrl(process.env.CAZT_RPC_URL))
   .option('--admin-url <url>', 'Aztec admin RPC url', process.env.CAZT_ADMIN_URL || 'http://localhost:8880')
   .option('--no-pretty', 'Print compact JSON', false)
   .option('--json', 'Output as JSON (default: raw value for utilities)', false);
@@ -31,7 +53,7 @@ program
   .option('--params <params>', 'JSON array for params', '[]')
   .action(async (options) => {
     const client = new RpcClient({
-      rpcUrl: program.opts().rpcUrl,
+      rpcUrl: resolveRpcUrl(program.opts().rpcUrl),
       adminUrl: program.opts().adminUrl,
       pretty: !program.opts().noPretty,
     });
@@ -43,32 +65,32 @@ program
 // Block commands
 const blockCmd = program.command('block').description('Block queries');
 blockCmd.command('number').description('Get current block number').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getBlockNumber', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 blockCmd.command('proven-number').description('Get proven block number').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getProvenBlockNumber', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 blockCmd.command('tips').description('Get L2 tips').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getL2Tips', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 blockCmd.command('get').description('Get block by number').requiredOption('--number <number>', 'Block number').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getBlock', [options.number]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 blockCmd.command('range').description('Get blocks range').requiredOption('--from <from>', 'From block').requiredOption('--limit <limit>', 'Limit').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getBlocks', [parseInt(options.from), parseInt(options.limit)]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 blockCmd.command('header').description('Get block header').option('--number <number>', 'Block number').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const params = options.number ? [options.number] : [];
   const result = await client.call('node_getBlockHeader', params);
   console.log(client.formatOutput(result, !program.opts().noPretty));
@@ -77,28 +99,28 @@ blockCmd.command('header').description('Get block header').option('--number <num
 // Transaction commands
 const txCmd = program.command('tx').description('Transactions');
 txCmd.command('send').description('Send transaction').requiredOption('--json <json>', 'JSON object or @file.json').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const tx = parseJsonOrFile(options.json);
   const result = await client.call('node_sendTx', [tx]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 txCmd.command('receipt').description('Get transaction receipt').requiredOption('--hash <hash>', 'Transaction hash').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getTxReceipt', [options.hash]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 txCmd.command('effect').description('Get transaction effect').requiredOption('--hash <hash>', 'Transaction hash').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getTxEffect', [options.hash]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 txCmd.command('get').description('Get transaction by hash').requiredOption('--hash <hash>', 'Transaction hash').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getTxByHash', [options.hash]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 txCmd.command('pending').description('Get pending transactions').option('--limit <limit>', 'Limit').option('--after <after>', 'After hash').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const params = [
     options.limit ? parseInt(options.limit) : null,
     options.after || null,
@@ -107,19 +129,19 @@ txCmd.command('pending').description('Get pending transactions').option('--limit
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 txCmd.command('pending-count').description('Get pending transaction count').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getPendingTxCount', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 txCmd.command('validate').description('Validate transaction').requiredOption('--json <json>', 'tx JSON or @file.json').option('--options <options>', 'JSON options', 'null').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const tx = parseJsonOrFile(options.json);
   const opts = parseJsonOrFile(options.options);
   const result = await client.call('node_isValidTx', [tx, opts]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 txCmd.command('sim-public').description('Simulate public calls').requiredOption('--json <json>', 'tx JSON or @file.json').option('--skip-fee-enforcement', 'Skip fee enforcement').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const tx = parseJsonOrFile(options.json);
   const result = await client.call('node_simulatePublicCalls', [tx, options.skipFeeEnforcement || null]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
@@ -128,12 +150,12 @@ txCmd.command('sim-public').description('Simulate public calls').requiredOption(
 // State commands
 const stateCmd = program.command('state').description('State queries');
 stateCmd.command('public-at').description('Get public storage at').requiredOption('--block <block>', 'Block').requiredOption('--contract <contract>', 'Contract address').requiredOption('--slot <slot>', 'Storage slot').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getPublicStorageAt', [options.block, options.contract, options.slot]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 stateCmd.command('sync-status').description('Get world state sync status').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getWorldStateSyncStatus', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
@@ -141,28 +163,28 @@ stateCmd.command('sync-status').description('Get world state sync status').actio
 // Merkle commands
 const merkleCmd = program.command('merkle').description('Merkle tree queries');
 merkleCmd.command('find-leaves').description('Find leaves indexes').requiredOption('--block <block>', 'Block').requiredOption('--tree-id <treeId>', 'Tree ID').requiredOption('--leaves <leaves>', 'JSON array or @file.json').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const leaves = parseJsonOrFile(options.leaves);
   const result = await client.call('node_findLeavesIndexes', [options.block, parseInt(options.treeId), leaves]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 merkleCmd.command('nullifier-path').description('Get nullifier sibling path').requiredOption('--block <block>', 'Block').requiredOption('--index <index>', 'Index').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getNullifierSiblingPath', [options.block, options.index]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 merkleCmd.command('note-hash-path').description('Get note hash sibling path').requiredOption('--block <block>', 'Block').requiredOption('--index <index>', 'Index').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getNoteHashSiblingPath', [options.block, options.index]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 merkleCmd.command('archive-path').description('Get archive sibling path').requiredOption('--block <block>', 'Block').requiredOption('--index <index>', 'Index').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getArchiveSiblingPath', [options.block, options.index]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 merkleCmd.command('public-data-path').description('Get public data sibling path').requiredOption('--block <block>', 'Block').requiredOption('--index <index>', 'Index').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getPublicDataSiblingPath', [options.block, options.index]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
@@ -170,27 +192,27 @@ merkleCmd.command('public-data-path').description('Get public data sibling path'
 // Witness commands
 const witnessCmd = program.command('witness').description('Membership witnesses');
 witnessCmd.command('nullifier').description('Get nullifier membership witness').requiredOption('--block <block>', 'Block').requiredOption('--nullifier <nullifier>', 'Nullifier').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getNullifierMembershipWitness', [options.block, options.nullifier]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 witnessCmd.command('low-nullifier').description('Get low nullifier membership witness').requiredOption('--block <block>', 'Block').requiredOption('--nullifier <nullifier>', 'Nullifier').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getLowNullifierMembershipWitness', [options.block, options.nullifier]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 witnessCmd.command('public-data').description('Get public data witness').requiredOption('--block <block>', 'Block').requiredOption('--leaf-slot <leafSlot>', 'Leaf slot').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getPublicDataWitness', [options.block, options.leafSlot]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 witnessCmd.command('archive').description('Get archive membership witness').requiredOption('--block <block>', 'Block').requiredOption('--archive-leaf <archiveLeaf>', 'Archive leaf').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getArchiveMembershipWitness', [options.block, options.archiveLeaf]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 witnessCmd.command('note-hash').description('Get note hash membership witness').requiredOption('--block <block>', 'Block').requiredOption('--note-hash <noteHash>', 'Note hash').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getNoteHashMembershipWitness', [options.block, options.noteHash]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
@@ -198,22 +220,22 @@ witnessCmd.command('note-hash').description('Get note hash membership witness').
 // Bridge commands
 const bridgeCmd = program.command('bridge').description('L1<->L2 messages');
 bridgeCmd.command('l1-to-l2-witness').description('Get L1->L2 message membership witness').requiredOption('--block <block>', 'Block').requiredOption('--message <message>', 'Message').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getL1ToL2MessageMembershipWitness', [options.block, options.message]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 bridgeCmd.command('l1-to-l2-block').description('Get L1->L2 message block').requiredOption('--message <message>', 'Message').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getL1ToL2MessageBlock', [options.message]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 bridgeCmd.command('is-l1-to-l2-synced').description('Check if L1->L2 message is synced').requiredOption('--message <message>', 'Message').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_isL1ToL2MessageSynced', [options.message]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 bridgeCmd.command('l2-to-l1').description('Get L2->L1 messages').requiredOption('--block <block>', 'Block').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getL2ToL1Messages', [options.block]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
@@ -221,24 +243,24 @@ bridgeCmd.command('l2-to-l1').description('Get L2->L1 messages').requiredOption(
 // Logs commands
 const logsCmd = program.command('logs').description('Logs');
 logsCmd.command('private').description('Get private logs').requiredOption('--from <from>', 'From block').requiredOption('--limit <limit>', 'Limit').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getPrivateLogs', [parseInt(options.from), parseInt(options.limit)]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 logsCmd.command('public').description('Get public logs').requiredOption('--filter <filter>', 'filter JSON or @file.json').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const filter = parseJsonOrFile(options.filter);
   const result = await client.call('node_getPublicLogs', [filter]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 logsCmd.command('contract-class').description('Get contract class logs').requiredOption('--filter <filter>', 'filter JSON or @file.json').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const filter = parseJsonOrFile(options.filter);
   const result = await client.call('node_getContractClassLogs', [filter]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 logsCmd.command('by-tags').description('Get logs by tags').requiredOption('--tags <tags>', 'JSON array or @file.json').option('--logs-per-tag <logsPerTag>', 'Logs per tag').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const tags = parseJsonOrFile(options.tags);
   const params = [tags];
   if (options.logsPerTag) params.push(parseInt(options.logsPerTag));
@@ -265,12 +287,12 @@ notesCmd
   .option('--status <status>', 'Note status (ACTIVE | CANCELLED | SETTLED)', 'ACTIVE')
   .option('--siloed-nullifier <nullifier>', 'Siloed nullifier (Fr) - optional')
   .option('--scopes <addresses>', 'Comma-separated list of scope addresses - optional')
-  .option('--node-url <url>', 'Node URL', process.env.CAZT_RPC_URL || 'http://localhost:8080')
+  .option('--node-url <url>', 'Node URL (or "devnet"/"testnet" for network shortcuts)', resolveRpcUrl(process.env.CAZT_RPC_URL))
   .option('--debug', 'Enable debug logging', false)
   .action(async (options) => {
     const params: any = {
       contractAddress: options.contract,
-      nodeUrl: options.nodeUrl,
+      nodeUrl: resolveRpcUrl(options.nodeUrl),
       debug: options.debug || false,
     };
     
@@ -450,7 +472,7 @@ notesCmd
   .option('--artifact <json>', 'Contract artifact JSON file path, artifact name (e.g., "aztec:Token"), or JSON string (required if computing hash from content)')
   .option('--note-content <json>', 'Note content as JSON object or @file.json (required if computing hash from content)')
   .option('--storage-slot <slot>', 'Storage slot (Fr) - can be a number or field value (required if computing hash from content)')
-  .option('--node-url <url>', 'Node URL', process.env.CAZT_RPC_URL || 'http://localhost:8080')
+  .option('--node-url <url>', 'Node URL (or "devnet"/"testnet" for network shortcuts)', resolveRpcUrl(process.env.CAZT_RPC_URL))
   .option('--note-type-name <name>', 'Note type name from artifact (optional, for disambiguation when computing hash)')
   .option('--first-nullifier <nullifier>', 'First nullifier from transaction (optional, for unique hash computation)')
   .option('--note-index <index>', 'Note index in transaction (optional, for unique hash computation)')
@@ -458,7 +480,7 @@ notesCmd
     try {
       const params: any = {
         txHash: options.txHash,
-        nodeUrl: options.nodeUrl,
+        nodeUrl: resolveRpcUrl(options.nodeUrl),
       };
       
       // If note hash is provided, use it directly
@@ -598,12 +620,12 @@ program
 // Contract commands
 const contractCmd = program.command('contract').description('Contract queries');
 contractCmd.command('class').description('Get contract class').requiredOption('--id <id>', 'Class ID').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getContractClass', [options.id]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 contractCmd.command('get').description('Get contract').argument('<address>', 'Contract address').action(async (address) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getContract', [address]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
@@ -611,47 +633,47 @@ contractCmd.command('get').description('Get contract').argument('<address>', 'Co
 // Node commands
 const nodeCmd = program.command('node').description('Node info & fees');
 nodeCmd.command('ready').description('Check if node is ready').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_isReady', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 nodeCmd.command('info').description('Get node info').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getNodeInfo', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 nodeCmd.command('node-version').description('Get node version').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getNodeVersion', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 nodeCmd.command('version').description('Get version').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getVersion', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 nodeCmd.command('chain-id').description('Get chain ID').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getChainId', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 nodeCmd.command('l1-addresses').description('Get L1 contract addresses').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getL1ContractAddresses', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 nodeCmd.command('protocol-addresses').description('Get protocol contract addresses').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getProtocolContractAddresses', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 nodeCmd.command('enr').description('Get encoded ENR').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getEncodedEnr', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 nodeCmd.command('base-fees').description('Get current base fees').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getCurrentBaseFees', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
@@ -659,12 +681,12 @@ nodeCmd.command('base-fees').description('Get current base fees').action(async (
 // Validators commands
 const validatorsCmd = program.command('validators').description('Validators');
 validatorsCmd.command('stats').description('Get validators stats').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getValidatorsStats', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 validatorsCmd.command('one').description('Get validator stats').requiredOption('--address <address>', 'Validator address').option('--from-slot <fromSlot>', 'From slot').option('--to-slot <toSlot>', 'To slot').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const params = [options.address];
   if (options.fromSlot) params.push(options.fromSlot);
   if (options.toSlot) params.push(options.toSlot);
@@ -675,13 +697,13 @@ validatorsCmd.command('one').description('Get validator stats').requiredOption('
 // Debug commands
 const debugCmd = program.command('debug').description('Debug helpers');
 debugCmd.command('register-sigs').description('Register contract function signatures').requiredOption('--sigs <sigs>', 'JSON array or @file.json').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const sigs = parseJsonOrFile(options.sigs);
   const result = await client.call('node_registerContractFunctionSignatures', [sigs]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 debugCmd.command('allowed-public-setup').description('Get allowed public setup').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('node_getAllowedPublicSetup', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
@@ -689,44 +711,44 @@ debugCmd.command('allowed-public-setup').description('Get allowed public setup')
 // Admin commands
 const adminCmd = program.command('admin').description('Admin namespace (port 8880)');
 adminCmd.command('get-config').description('Get admin config').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('nodeAdmin_getConfig', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 adminCmd.command('set-config').description('Set admin config').requiredOption('--json <json>', 'partial config JSON or @file.json').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const config = parseJsonOrFile(options.json);
   const result = await client.call('nodeAdmin_setConfig', [config]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 adminCmd.command('pause-sync').description('Pause sync').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('nodeAdmin_pauseSync', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 adminCmd.command('resume-sync').description('Resume sync').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('nodeAdmin_resumeSync', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 adminCmd.command('rollback-to').description('Rollback to block').requiredOption('--target-block-number <number>', 'Target block number').option('--force', 'Force rollback').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const params = [parseInt(options.targetBlockNumber), options.force || null];
   const result = await client.call('nodeAdmin_rollbackTo', params);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 adminCmd.command('start-snapshot-upload').description('Start snapshot upload').requiredOption('--location <location>', 'Location').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('nodeAdmin_startSnapshotUpload', [options.location]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 adminCmd.command('get-slash-payloads').description('Get slash payloads').action(async () => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('nodeAdmin_getSlashPayloads', []);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
 adminCmd.command('get-slash-offenses').description('Get slash offenses').option('--round <round>', 'Round', 'current').action(async (options) => {
-  const client = new RpcClient({ rpcUrl: program.opts().rpcUrl, adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
+  const client = new RpcClient({ rpcUrl: resolveRpcUrl(program.opts().rpcUrl), adminUrl: program.opts().adminUrl, pretty: !program.opts().noPretty });
   const result = await client.call('nodeAdmin_getSlashOffenses', [options.round]);
   console.log(client.formatOutput(result, !program.opts().noPretty));
 });
