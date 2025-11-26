@@ -1217,6 +1217,28 @@ program.command('silo-private-log').alias('spl').description('Silo private log t
   outputResult(result, program.opts().json);
 });
 
+program.command('decrypt-private-log').alias('dpl').description('Decrypt a raw private log ciphertext').requiredOption('--ciphertext <ciphertext>', 'JSON array of 17 field values (hex strings) or @file.json').requiredOption('--recipient-address <address>', 'Complete address of the recipient').requiredOption('--recipient-secret-key <key>', 'Secret key (Fr) of the recipient').action(async (options) => {
+  try {
+    const ciphertext = parseJsonOrFile(options.ciphertext);
+    if (!Array.isArray(ciphertext)) {
+      throw new Error('ciphertext must be a JSON array');
+    }
+    
+    const params = JSON.stringify({
+      ciphertext,
+      recipientAddress: options.recipientAddress,
+      recipientSecretKey: options.recipientSecretKey,
+    });
+    
+    const result = await AztecUtilities.decryptRawPrivateLog(params);
+    // Array output - always JSON
+    console.log(JSON.stringify(result, null, program.opts().noPretty ? 0 : 2));
+  } catch (error: any) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+});
+
 program.command('var-args-hash').alias('vah').description('Hash function arguments (for authwit)').argument('<fields>', 'JSON array of field values').action(async (fields: string) => {
   const result = await AztecUtilities.varArgsHash(fields);
   outputResult(result, program.opts().json);
