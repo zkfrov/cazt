@@ -655,6 +655,205 @@ notesCmd
     }
   });
 
+// Deployment commands
+const deployCmd = program.command('deploy').description('Deploy Aztec contracts');
+
+// Simple deployment - just artifact
+deployCmd
+  .command('simple')
+  .description('Deploy a contract (simplest form - just artifact)')
+  .requiredOption('--artifact <artifact>', 'Contract artifact (aztec:ContractName, standards:ContractName, or file path)')
+  .option('--node-url <url>', 'Node URL (or "devnet"/"testnet")', resolveRpcUrl(process.env.CAZT_RPC_URL))
+  .option('--secret-key <key>', 'Secret key (Fr) for account creation')
+  .option('--salt <salt>', 'Salt (Fr) for account creation (use "random" for random salt)')
+  .option('--no-wait', 'Don\'t wait for deployment to complete', false)
+  .option('--debug', 'Enable debug logging', false)
+  .action(async (options) => {
+    try {
+      const params: any = {
+        nodeUrl: resolveRpcUrl(options.nodeUrl),
+        artifact: options.artifact,
+        wait: !options.noWait,
+        debug: options.debug || false,
+      };
+
+      if (options.secretKey) {
+        params.secretKey = options.secretKey;
+      }
+      if (options.salt) {
+        params.salt = options.salt;
+      }
+
+      const result = await AztecUtilities.deployContract(JSON.stringify(params));
+      outputResult(result, program.opts().json);
+    } catch (error: any) {
+      console.error(`❌ Error: ${error.message}`);
+      if (options.debug) {
+        console.error(error.stack);
+      }
+      process.exit(1);
+    }
+  });
+
+// Deployment with salt
+deployCmd
+  .command('with-salt')
+  .description('Deploy a contract with a specific salt for address computation')
+  .requiredOption('--artifact <artifact>', 'Contract artifact (aztec:ContractName, standards:ContractName, or file path)')
+  .requiredOption('--contract-salt <salt>', 'Salt (Fr) for contract address computation (use "random" for random salt)')
+  .option('--node-url <url>', 'Node URL (or "devnet"/"testnet")', resolveRpcUrl(process.env.CAZT_RPC_URL))
+  .option('--secret-key <key>', 'Secret key (Fr) for account creation')
+  .option('--salt <salt>', 'Salt (Fr) for account creation (use "random" for random salt)')
+  .option('--no-wait', 'Don\'t wait for deployment to complete', false)
+  .option('--debug', 'Enable debug logging', false)
+  .action(async (options) => {
+    try {
+      const params: any = {
+        nodeUrl: resolveRpcUrl(options.nodeUrl),
+        artifact: options.artifact,
+        contractAddressSalt: options.contractSalt,
+        wait: !options.noWait,
+        debug: options.debug || false,
+      };
+
+      if (options.secretKey) {
+        params.secretKey = options.secretKey;
+      }
+      if (options.salt) {
+        params.salt = options.salt;
+      }
+
+      const result = await AztecUtilities.deployContract(JSON.stringify(params));
+      outputResult(result, program.opts().json);
+    } catch (error: any) {
+      console.error(`❌ Error: ${error.message}`);
+      if (options.debug) {
+        console.error(error.stack);
+      }
+      process.exit(1);
+    }
+  });
+
+// Deployment with constructor arguments
+deployCmd
+  .command('with-args')
+  .description('Deploy a contract with constructor arguments')
+  .requiredOption('--artifact <artifact>', 'Contract artifact (aztec:ContractName, standards:ContractName, or file path)')
+  .requiredOption('--args <args>', 'Constructor arguments (JSON array or comma-separated values)')
+  .option('--constructor-name <name>', 'Constructor function name (if multiple constructors)')
+  .option('--node-url <url>', 'Node URL (or "devnet"/"testnet")', resolveRpcUrl(process.env.CAZT_RPC_URL))
+  .option('--secret-key <key>', 'Secret key (Fr) for account creation')
+  .option('--salt <salt>', 'Salt (Fr) for account creation (use "random" for random salt)')
+  .option('--contract-salt <salt>', 'Salt (Fr) for contract address computation (use "random" for random salt)')
+  .option('--no-wait', 'Don\'t wait for deployment to complete', false)
+  .option('--debug', 'Enable debug logging', false)
+  .action(async (options) => {
+    try {
+      const params: any = {
+        nodeUrl: resolveRpcUrl(options.nodeUrl),
+        artifact: options.artifact,
+        constructorArgs: options.args,
+        wait: !options.noWait,
+        debug: options.debug || false,
+      };
+
+      if (options.constructorName) {
+        params.constructorName = options.constructorName;
+      }
+      if (options.secretKey) {
+        params.secretKey = options.secretKey;
+      }
+      if (options.salt) {
+        params.salt = options.salt;
+      }
+      if (options.contractSalt) {
+        params.contractAddressSalt = options.contractSalt;
+      }
+
+      const result = await AztecUtilities.deployContract(JSON.stringify(params));
+      outputResult(result, program.opts().json);
+    } catch (error: any) {
+      console.error(`❌ Error: ${error.message}`);
+      if (options.debug) {
+        console.error(error.stack);
+      }
+      process.exit(1);
+    }
+  });
+
+// Full deployment with all options
+deployCmd
+  .command('full')
+  .description('Deploy a contract with all available options')
+  .requiredOption('--artifact <artifact>', 'Contract artifact (aztec:ContractName, standards:ContractName, or file path)')
+  .option('--args <args>', 'Constructor arguments (JSON array or comma-separated values)')
+  .option('--constructor-name <name>', 'Constructor function name (if multiple constructors)')
+  .option('--contract-salt <salt>', 'Salt (Fr) for contract address computation (use "random" for random salt)')
+  .option('--deployer <address>', 'Deployer address (AztecAddress)')
+  .option('--universal-deploy', 'Don\'t include sender in address computation', false)
+  .option('--skip-class-publication', 'Skip contract class publication', false)
+  .option('--skip-instance-publication', 'Skip instance publication', false)
+  .option('--skip-initialization', 'Skip contract initialization', false)
+  .option('--skip-registration', 'Skip contract registration in wallet', false)
+  .option('--node-url <url>', 'Node URL (or "devnet"/"testnet")', resolveRpcUrl(process.env.CAZT_RPC_URL))
+  .option('--secret-key <key>', 'Secret key (Fr) for account creation')
+  .option('--salt <salt>', 'Salt (Fr) for account creation (use "random" for random salt)')
+  .option('--no-wait', 'Don\'t wait for deployment to complete', false)
+  .option('--debug', 'Enable debug logging', false)
+  .action(async (options) => {
+    try {
+      const params: any = {
+        nodeUrl: resolveRpcUrl(options.nodeUrl),
+        artifact: options.artifact,
+        wait: !options.noWait,
+        debug: options.debug || false,
+      };
+
+      if (options.args) {
+        params.constructorArgs = options.args;
+      }
+      if (options.constructorName) {
+        params.constructorName = options.constructorName;
+      }
+      if (options.contractSalt) {
+        params.contractAddressSalt = options.contractSalt;
+      }
+      if (options.deployer) {
+        params.deployer = options.deployer;
+      }
+      if (options.universalDeploy) {
+        params.universalDeploy = true;
+      }
+      if (options.skipClassPublication) {
+        params.skipClassPublication = true;
+      }
+      if (options.skipInstancePublication) {
+        params.skipInstancePublication = true;
+      }
+      if (options.skipInitialization) {
+        params.skipInitialization = true;
+      }
+      if (options.skipRegistration) {
+        params.skipRegistration = true;
+      }
+      if (options.secretKey) {
+        params.secretKey = options.secretKey;
+      }
+      if (options.salt) {
+        params.salt = options.salt;
+      }
+
+      const result = await AztecUtilities.deployContract(JSON.stringify(params));
+      outputResult(result, program.opts().json);
+    } catch (error: any) {
+      console.error(`❌ Error: ${error.message}`);
+      if (options.debug) {
+        console.error(error.stack);
+      }
+      process.exit(1);
+    }
+  });
+
 // Artifacts commands
 const artifactsCmd = program.command('artifacts').description('List available contract artifacts');
 artifactsCmd
