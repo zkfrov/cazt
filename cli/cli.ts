@@ -1217,11 +1217,27 @@ program.command('silo-private-log').alias('spl').description('Silo private log t
   outputResult(result, program.opts().json);
 });
 
-program.command('decrypt-private-log').alias('dpl').description('Decrypt a raw private log ciphertext').requiredOption('--ciphertext <ciphertext>', 'JSON array of 17 field values (hex strings) or @file.json').requiredOption('--recipient-address <address>', 'Complete address of the recipient').requiredOption('--recipient-secret-key <key>', 'Secret key (Fr) of the recipient').action(async (options) => {
+program.command('decrypt-private-log').alias('dpl').description('Decrypt a raw private log ciphertext').requiredOption('--ciphertext <ciphertext>', 'Comma-separated field values (e.g., "0x1,0x2,...") or JSON array or @file.json').requiredOption('--recipient-address <address>', 'Complete address of the recipient').requiredOption('--recipient-secret-key <key>', 'Secret key (Fr) of the recipient').action(async (options) => {
   try {
-    const ciphertext = parseJsonOrFile(options.ciphertext);
-    if (!Array.isArray(ciphertext)) {
-      throw new Error('ciphertext must be a JSON array');
+    let ciphertext: string[];
+    
+    // Check if it's a file reference
+    if (options.ciphertext.startsWith('@')) {
+      const parsed = parseJsonOrFile(options.ciphertext);
+      if (!Array.isArray(parsed)) {
+        throw new Error('ciphertext file must contain a JSON array');
+      }
+      ciphertext = parsed;
+    } else if (options.ciphertext.trim().startsWith('[')) {
+      // Try parsing as JSON array
+      const parsed = JSON.parse(options.ciphertext);
+      if (!Array.isArray(parsed)) {
+        throw new Error('ciphertext must be a JSON array or comma-separated values');
+      }
+      ciphertext = parsed;
+    } else {
+      // Parse as comma-separated values
+      ciphertext = options.ciphertext.split(',').map((item: string) => item.trim()).filter((item: string) => item.length > 0);
     }
     
     const params = JSON.stringify({
