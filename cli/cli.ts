@@ -1094,9 +1094,14 @@ program.command('hash-zero').alias('hz').description('Prints the zero hash').act
 });
 
 program.command('keccak').alias('k').description('Keccak-256 hash').argument('[data]', 'The data to hash').action(async (data) => {
-  const input = data || await readStdin();
-  const result = await AztecUtilities.keccak(input);
-  outputResult(`0x${result}`, program.opts().json);
+  try {
+    const input = data || await readStdin();
+    const result = await AztecUtilities.keccak(input);
+    outputResult(`0x${result}`, program.opts().json);
+  } catch (error: any) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
 });
 
 program.command('sha256').alias('sha').description('SHA-256 hash (Aztec standard)').argument('[data]', 'The data to hash').action(async (data) => {
@@ -1106,48 +1111,58 @@ program.command('sha256').alias('sha').description('SHA-256 hash (Aztec standard
 });
 
 program.command('poseidon2').alias('p2').alias('poseidon').description('Poseidon2 hash').argument('<fields>', 'Comma-separated field values (e.g., "0x1,0x2,0x3") or JSON array').action(async (fields: string) => {
-  let fieldsArray: string[];
-  
-  // Check if it's a JSON array
-  if (fields.trim().startsWith('[')) {
-    // Try parsing as JSON array
-    const parsed = JSON.parse(fields);
-    if (!Array.isArray(parsed)) {
-      throw new Error('fields must be a JSON array or comma-separated values');
+  try {
+    let fieldsArray: string[];
+    
+    // Check if it's a JSON array
+    if (fields.trim().startsWith('[')) {
+      // Try parsing as JSON array
+      const parsed = JSON.parse(fields);
+      if (!Array.isArray(parsed)) {
+        throw new Error('fields must be a JSON array or comma-separated values');
+      }
+      fieldsArray = parsed;
+    } else {
+      // Parse as comma-separated values
+      fieldsArray = fields.split(',').map((item: string) => item.trim()).filter((item: string) => item.length > 0);
     }
-    fieldsArray = parsed;
-  } else {
-    // Parse as comma-separated values
-    fieldsArray = fields.split(',').map((item: string) => item.trim()).filter((item: string) => item.length > 0);
+    
+    const result = await AztecUtilities.poseidon2(JSON.stringify(fieldsArray));
+    outputResult(result, program.opts().json);
+  } catch (error: any) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
   }
-  
-  const result = await AztecUtilities.poseidon2(JSON.stringify(fieldsArray));
-  outputResult(result, program.opts().json);
 });
 
 program.command('pedersen').alias('ped').description('Pedersen hash').argument('<fields>', 'Comma-separated field values (e.g., "0x1,0x2,0x3") or JSON array').option('--index <index>', 'Hash index (default: 0)', '0').action(async (fields: string, options) => {
-  let fieldsArray: string[];
-  
-  // Check if it's a JSON array
-  if (fields.trim().startsWith('[')) {
-    // Try parsing as JSON array
-    const parsed = JSON.parse(fields);
-    if (!Array.isArray(parsed)) {
-      throw new Error('fields must be a JSON array or comma-separated values');
+  try {
+    let fieldsArray: string[];
+    
+    // Check if it's a JSON array
+    if (fields.trim().startsWith('[')) {
+      // Try parsing as JSON array
+      const parsed = JSON.parse(fields);
+      if (!Array.isArray(parsed)) {
+        throw new Error('fields must be a JSON array or comma-separated values');
+      }
+      fieldsArray = parsed;
+    } else {
+      // Parse as comma-separated values
+      fieldsArray = fields.split(',').map((item: string) => item.trim()).filter((item: string) => item.length > 0);
     }
-    fieldsArray = parsed;
-  } else {
-    // Parse as comma-separated values
-    fieldsArray = fields.split(',').map((item: string) => item.trim()).filter((item: string) => item.length > 0);
+    
+    const params = JSON.stringify({
+      inputs: fieldsArray,
+      index: parseInt(options.index) || 0,
+    });
+    
+    const result = await AztecUtilities.computePedersenHash(params);
+    outputResult(result, program.opts().json);
+  } catch (error: any) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
   }
-  
-  const params = JSON.stringify({
-    inputs: fieldsArray,
-    index: parseInt(options.index) || 0,
-  });
-  
-  const result = await AztecUtilities.computePedersenHash(params);
-  outputResult(result, program.opts().json);
 });
 
 program.command('secret-hash').alias('sh').description('Compute secret hash').argument('<secret>', 'The secret value').action(async (secret: string) => {

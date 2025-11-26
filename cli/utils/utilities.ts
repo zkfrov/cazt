@@ -62,33 +62,47 @@ import { fileURLToPath } from 'url';
 export class AztecUtilities {
   // Hash utilities
   static async keccak(data: string): Promise<string> {
-    const bytes = data.startsWith('0x') 
-      ? Buffer.from(data.slice(2), 'hex')
-      : Buffer.from(data, 'utf8');
+    let bytes: Buffer;
+    
+    if (data.startsWith('0x')) {
+      // Hex input: check for odd number of digits
+      const hexPart = data.slice(2);
+      if (hexPart.length % 2 !== 0) {
+        throw new Error('odd number of digits');
+      }
+      bytes = Buffer.from(hexPart, 'hex');
+    } else {
+      // Non-hex input: treat as UTF-8 string (can contain letters, etc.)
+      bytes = Buffer.from(data, 'utf8');
+    }
+    
     const result = keccak256(bytes);
     return result.toString('hex');
   }
 
+  // Helper to validate hex string has even number of digits (byte-aligned)
+  // Throws error if odd number of digits, matching keccak behavior
+  private static validateHexString(value: string): void {
+    if (value.startsWith('0x')) {
+      const hexPart = value.slice(2);
+      if (hexPart.length % 2 !== 0) {
+        throw new Error('odd number of digits');
+      }
+    }
+  }
+
   // Helper to convert string to Fr
   private static stringToFr(value: string): Fr {
-    // Try to parse as hex first
+    // If it's a hex string (starts with 0x), validate it has even number of digits and parse as hex
     if (value.startsWith('0x')) {
+      this.validateHexString(value);
       return new Fr(BigInt(value));
     }
-    // Try to parse as number
-    if (/^\d+$/.test(value)) {
-      return new Fr(BigInt(value));
-    }
-    // Otherwise, treat as hex string without prefix
-    try {
-      return new Fr(BigInt(`0x${value}`));
-    } catch {
-      // If all else fails, convert to buffer, pad to 32 bytes, and use fromBuffer
-      const buffer = Buffer.from(value, 'utf8');
-      const padded = Buffer.alloc(32);
-      buffer.copy(padded, 0, 0, Math.min(buffer.length, 32));
-      return Fr.fromBuffer(padded);
-    }
+    // Otherwise, treat as UTF-8 string
+    const buffer = Buffer.from(value, 'utf8');
+    const padded = Buffer.alloc(32);
+    buffer.copy(padded, 0, 0, Math.min(buffer.length, 32));
+    return Fr.fromBuffer(padded);
   }
 
   static async sha256(data: string): Promise<string> {
@@ -125,16 +139,8 @@ export class AztecUtilities {
     }
 
     // Convert inputs to Fieldable[] (can be Fr, Buffer, string, etc.)
+    // Use stringToFr which treats 0x-prefixed as hex, everything else as UTF-8
     const inputFields = inputs.map((item: string) => {
-      // If it's a hex string, convert to Fr
-      if (typeof item === 'string' && item.startsWith('0x')) {
-        return this.stringToFr(item);
-      }
-      // If it's a number string, convert to Fr
-      if (typeof item === 'string' && /^\d+$/.test(item)) {
-        return new Fr(BigInt(item));
-      }
-      // Otherwise try to convert to Fr
       return this.stringToFr(item);
     });
 
