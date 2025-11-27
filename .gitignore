@@ -7,6 +7,11 @@ package-lock.json
 dist/
 *.tsbuildinfo
 
+# Compiled files in source directories (should only be in dist/)
+**/*.js
+**/*.d.ts
+!node_modules/**
+
 # Aztec Standards
 .aztec-standards/
 

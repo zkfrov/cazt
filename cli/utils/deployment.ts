@@ -4,6 +4,7 @@ import { createAztecNodeClient, waitForNode } from '@aztec/aztec.js/node';
 import { TestWallet } from '@aztec/test-wallet/server';
 import { Contract } from '@aztec/aztec.js/contracts';
 import { loadContractArtifact } from '@aztec/stdlib/abi';
+import { getDefaultNodeUrl } from '../config/index.js';
 
 /**
  * Deployment utility functions
@@ -15,7 +16,7 @@ export class DeploymentUtils {
   static async deployContract(params: string): Promise<any> {
     const p = JSON.parse(params);
     const {
-      nodeUrl = 'http://localhost:8080',
+      nodeUrl = getDefaultNodeUrl(),
       artifact: artifactInput,
       secretKey,
       salt,

@@ -2,6 +2,7 @@ import { AztecAddress } from '@aztec/aztec.js/addresses';
 import { Fr } from '@aztec/foundation/fields';
 import { poseidon2HashWithSeparator } from '@aztec/foundation/crypto';
 import { GeneratorIndex } from '@aztec/constants';
+import { getDefaultNodeUrl } from '../config/index.js';
 import {
   computeNoteHashNonce,
   siloNoteHash,
@@ -34,7 +35,7 @@ export class NoteUtils {
     };
     
     debugLog(`[DEBUG] Starting fetchNotes with params:`, {
-      nodeUrl: p.nodeUrl || 'http://localhost:8080',
+      nodeUrl: p.nodeUrl || getDefaultNodeUrl(),
       hasSender: !!p.sender,
       hasContractAddress: !!p.contractAddress,
       hasArtifact: !!p.artifact,
@@ -45,7 +46,7 @@ export class NoteUtils {
       saltsCount: p.salts?.length || (p.salt ? 1 : 0),
     });
     
-    const nodeUrl = p.nodeUrl || 'http://localhost:8080';
+    const nodeUrl = p.nodeUrl || getDefaultNodeUrl();
     const senderAddress = p.sender ? AztecAddress.fromString(p.sender) : undefined;
     const contractAddress = p.contractAddress ? AztecAddress.fromString(p.contractAddress) : undefined;
     const artifactJson = p.artifact;
@@ -606,7 +607,7 @@ export class NoteUtils {
     const artifact = p.artifact;
     const noteContent = p.noteContent;
     const storageSlot = p.storageSlot;
-    const nodeUrl = p.nodeUrl || 'http://localhost:8080';
+    const nodeUrl = p.nodeUrl || getDefaultNodeUrl();
     const firstNullifier = p.firstNullifier;
     const noteIndex = p.noteIndex;
 

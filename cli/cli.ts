@@ -3,6 +3,7 @@
 import { Command } from 'commander';
 import { RpcClient, parseJsonOrFile } from './utils/rpc.js';
 import { AztecUtilities } from './utils/index.js';
+import { resolveRpcUrl, resolveAdminUrl } from './config/index.js';
 import * as readline from 'readline';
 import { readdirSync, existsSync, readFileSync } from 'fs';
 import { join, resolve, dirname } from 'path';
@@ -11,28 +12,6 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const packageJson = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf-8'));
-
-// Network URL mappings
-const NETWORK_URLS: Record<string, string> = {
-  devnet: 'https://devnet.aztec-labs.com',
-  testnet: 'https://aztec-testnet-fullnode.zkv.xyz',
-};
-
-/**
- * Resolve RPC URL - converts network shortcuts (devnet, testnet) to actual URLs
- */
-function resolveRpcUrl(url: string | undefined): string {
-  if (!url) {
-    return process.env.CAZT_RPC_URL || 'http://localhost:8080';
-  }
-  // Check if it's a network shortcut
-  const lowerUrl = url.toLowerCase();
-  if (NETWORK_URLS[lowerUrl]) {
-    return NETWORK_URLS[lowerUrl];
-  }
-  // Otherwise return as-is
-  return url;
-}
 
 const program = new Command();
 
@@ -165,8 +144,8 @@ program
   .name('cazt')
   .description('cast-like CLI for Aztec Node JSON-RPC')
   .version(packageJson.version)
-  .option('--rpc-url <url>', 'Aztec node RPC url (or "devnet"/"testnet" for network shortcuts)', resolveRpcUrl(process.env.CAZT_RPC_URL))
-  .option('--admin-url <url>', 'Aztec admin RPC url', process.env.CAZT_ADMIN_URL || 'http://localhost:8880')
+  .option('--rpc-url <url>', 'Aztec node RPC url (or "devnet"/"testnet" for network shortcuts)', resolveRpcUrl(undefined))
+  .option('--admin-url <url>', 'Aztec admin RPC url', resolveAdminUrl(undefined))
   .option('--no-pretty', 'Print compact JSON', false)
   .option('--json', 'Output as JSON (default: raw value for utilities)', false);
 
