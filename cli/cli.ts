@@ -1582,5 +1582,17 @@ async function readStdin(): Promise<string> {
   });
 }
 
-program.parse();
+// Export program for testing
+export { program };
+
+// Only parse if this is the main module (not imported for testing)
+// Check if we're being run directly (not imported)
+const isMainModule = import.meta.url === `file://${process.argv[1]}` || 
+                     process.argv[1]?.endsWith('cli.js') || 
+                     process.argv[1]?.endsWith('cli.ts') ||
+                     (typeof process !== 'undefined' && process.env.NODE_ENV !== 'test' && !process.argv[1]?.includes('jest'));
+
+if (isMainModule) {
+  program.parse();
+}
 

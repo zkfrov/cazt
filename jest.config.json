@@ -8,6 +8,7 @@
     "**/tests/**/*.test.ts"
   ],
   "testEnvironment": "node",
+  "verbose": true,
   "transform": {
     "^.+\\.ts$": [
       "ts-jest",
