@@ -1,4 +1,4 @@
-import { AztecUtilities } from '../cli/utils/utilities.js';
+import { AztecUtilities } from '../cli/utils/index.js';
 
 describe('AztecUtilities', () => {
   describe('Address utilities', () => {

@@ -2,7 +2,7 @@
 
 import { Command } from 'commander';
 import { RpcClient, parseJsonOrFile } from './utils/rpc.js';
-import { AztecUtilities } from './utils/utilities.js';
+import { AztecUtilities } from './utils/index.js';
 import * as readline from 'readline';
 import { readdirSync, existsSync, readFileSync } from 'fs';
 import { join, resolve, dirname } from 'path';
